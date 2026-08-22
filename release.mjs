@@ -1,10 +1,30 @@
 import { execSync } from "node:child_process";
 
-const type = process.argv[2] ?? "patch";
-if (!new Set(["major", "minor", "patch"]).has(type)) {
-  console.error("Release type must be major, minor, or patch.");
+const args = process.argv.slice(2);
+let type = "patch";
+
+for (const arg of args) {
+  if (arg.startsWith("type=")) type = arg.slice("type=".length);
+  else if (arg.startsWith("--type=")) type = arg.slice("--type=".length);
+  else if (["major", "minor", "patch"].includes(arg)) type = arg;
+}
+
+if (!["major", "minor", "patch"].includes(type)) {
+  console.error(`Invalid release type: ${type}. Use major, minor, or patch.`);
   process.exit(1);
 }
 
-execSync(`pnpm version ${type} --tag-version-prefix=""`, { stdio: "inherit" });
-execSync("git push --follow-tags", { stdio: "inherit" });
+try {
+  console.log(`Releasing new ${type} version...`);
+  execSync(`pnpm version ${type} --tag-version-prefix=""`, {
+    stdio: "inherit",
+  });
+  console.log("Version metadata updated. Pushing commit and tag...");
+  execSync("git push --follow-tags", { stdio: "inherit" });
+} catch (error) {
+  console.error(
+    "Release failed:",
+    error instanceof Error ? error.message : error,
+  );
+  process.exit(1);
+}

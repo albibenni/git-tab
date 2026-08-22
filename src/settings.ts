@@ -11,7 +11,7 @@ export class GitHubSyncSettingTab extends PluginSettingTab {
   display(): void {
     const { containerEl } = this;
     containerEl.empty();
-    containerEl.createEl("h2", { text: "GitHub Sync Mobile" });
+    containerEl.createEl("h2", { text: "Git Pad" });
     containerEl.createEl("p", {
       text: "A clone can be installed and configured later: identical notes are adopted without being rewritten.",
     });

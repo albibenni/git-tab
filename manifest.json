@@ -1,10 +1,10 @@
 {
-  "id": "github-sync-mobile",
-  "name": "GitHub Sync Mobile",
+  "id": "git-pad",
+  "name": "Git Pad",
   "version": "0.1.0",
   "minAppVersion": "1.11.4",
   "description": "Sync Markdown files in an Obsidian vault folder with a GitHub repository.",
-  "author": "Your name",
-  "authorUrl": "",
+  "author": "AlbiBenni",
+  "authorUrl": "https://github.com/albibenni",
   "isDesktopOnly": false
 }
