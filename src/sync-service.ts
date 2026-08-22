@@ -1,7 +1,7 @@
 import { App, normalizePath, TFile } from "obsidian";
 import { GitHubApi } from "./github-api";
 import type { GitHubSyncSettings, SyncResult } from "./types";
-import { contentHash, mapConcurrent } from "./utils";
+import { contentHash, gitBlobSha, mapConcurrent } from "./utils";
 
 const noProgress = (_message: string): void => undefined;
 
@@ -44,6 +44,17 @@ export class SyncService {
           this.settings.fileState[path] = {
             sha: entry.sha,
             contentHash: known.contentHash ?? localHash,
+          };
+          return;
+        }
+        if (
+          !known &&
+          entry.sha.length === 40 &&
+          (await gitBlobSha(localContent)) === entry.sha
+        ) {
+          this.settings.fileState[path] = {
+            sha: entry.sha,
+            contentHash: localHash,
           };
           return;
         }

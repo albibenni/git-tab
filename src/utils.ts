@@ -18,6 +18,18 @@ export async function contentHash(value: string): Promise<string> {
   ).join("");
 }
 
+export async function gitBlobSha(value: string): Promise<string> {
+  const content = new TextEncoder().encode(value);
+  const header = new TextEncoder().encode(`blob ${content.byteLength}\0`);
+  const bytes = new Uint8Array(header.byteLength + content.byteLength);
+  bytes.set(header);
+  bytes.set(content, header.byteLength);
+  const digest = await crypto.subtle.digest("SHA-1", bytes);
+  return Array.from(new Uint8Array(digest), (byte) =>
+    byte.toString(16).padStart(2, "0"),
+  ).join("");
+}
+
 export function remotePath(root: string, localPath: string): string {
   return [root, localPath]
     .filter(Boolean)

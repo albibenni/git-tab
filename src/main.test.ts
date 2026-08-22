@@ -1,6 +1,7 @@
 import {
   decodeBase64,
   encodeBase64,
+  gitBlobSha,
   mapConcurrent,
   message,
   remotePath,
@@ -42,5 +43,11 @@ describe("encoding helpers", () => {
       active--;
     });
     expect(peak).toBeLessThanOrEqual(2);
+  });
+
+  it("matches GitHub blob SHAs without requesting file content", async () => {
+    await expect(gitBlobSha("hello\n")).resolves.toBe(
+      "ce013625030ba8dba906f756967f9e9ca394464a",
+    );
   });
 });
