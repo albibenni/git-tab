@@ -20,6 +20,21 @@ export class GitHubSyncSettingTab extends PluginSettingTab {
     this.text("Branch", "Usually main.", "branch");
     this.text("Remote folder", "Optional repository subfolder.", "vaultFolder");
     new Setting(containerEl)
+      .setName("First Pull speed")
+      .setDesc(
+        "Concurrent note checks during first Pull. Use 2–4 on older iPads and 6–8 on recent iPads; higher values use more memory and can trigger GitHub limits.",
+      )
+      .addSlider((slider) =>
+        slider
+          .setLimits(1, 12, 1)
+          .setValue(this.plugin.settings.pullConcurrency)
+          .setDynamicTooltip()
+          .onChange(async (value) => {
+            this.plugin.settings.pullConcurrency = value;
+            await this.plugin.saveSettings();
+          }),
+      );
+    new Setting(containerEl)
       .setName("GitHub credential")
       .setDesc(
         "Select or create a secret. Only its name is saved in plugin settings.",

@@ -11,6 +11,8 @@ A mobile-first Obsidian plugin that synchronizes Markdown files with a GitHub re
 
 It deliberately excludes attachments, deletes, automatic background sync, and conflict merging in this initial release. This makes its behavior conservative on mobile devices.
 
+**First Pull speed** controls concurrent note checks. Keep the default of 4 on older iPads; try 6–8 on a recent iPad only if the initial baseline is slow. Higher values consume more memory and can encounter GitHub rate limits.
+
 ## Clone first, install later
 
 This is supported. Clone or otherwise copy the repository into an Obsidian vault, then install and configure the plugin. On the first pull or push, identical local and GitHub notes are adopted as the sync baseline without being overwritten or committed. If the two copies differ, the plugin reports a conflict and preserves both copies. Plugin settings in `.obsidian/` are never synchronized because only Markdown files are in scope.

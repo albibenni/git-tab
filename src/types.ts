@@ -12,6 +12,7 @@ export const storedSettingsSchema = z
     branch: z.string(),
     vaultFolder: z.string(),
     tokenSecretName: z.string(),
+    pullConcurrency: z.number().int().min(1).max(12),
     fileState: z.record(z.string(), fileStateSchema),
   })
   .partial();
@@ -22,6 +23,7 @@ export interface GitHubSyncSettings {
   branch: string;
   vaultFolder: string;
   tokenSecretName: string;
+  pullConcurrency: number;
   lastSyncedCommit?: string;
   fileState: Record<string, z.infer<typeof fileStateSchema>>;
 }
@@ -32,6 +34,7 @@ export const defaultSettings: GitHubSyncSettings = {
   branch: "main",
   vaultFolder: "",
   tokenSecretName: "",
+  pullConcurrency: 4,
   fileState: {},
 };
 

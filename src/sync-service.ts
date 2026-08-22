@@ -23,7 +23,7 @@ export class SyncService {
     const result: SyncResult = { changed: 0, conflicts: [], requiresPull: [] };
     await mapConcurrent(
       [...remote.entries()],
-      4,
+      this.settings.pullConcurrency,
       async ([path, entry], index) => {
         this.onProgress(`Pull: checking ${index + 1}/${remote.size}…`);
         const local = this.app.vault.getAbstractFileByPath(path);
@@ -76,8 +76,11 @@ export class SyncService {
         }
       },
     );
-    if (result.conflicts.length === 0)
+    this.onProgress("Pull: finalizing note checks…");
+    if (result.conflicts.length === 0) {
+      this.onProgress("Pull: fetching final branch status…");
       result.headCommit = await this.api.getHead();
+    }
     return result;
   }
 
