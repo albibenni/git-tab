@@ -63,6 +63,8 @@ export class SyncService {
         result.conflicts.push(path);
       }
     }
+    if (result.conflicts.length === 0)
+      result.headCommit = await this.api.getHead();
     return result;
   }
 
@@ -116,6 +118,8 @@ export class SyncService {
         contentHash: change.hash,
       };
     result.changed = changes.length;
+    if (result.conflicts.length === 0 && result.requiresPull.length === 0)
+      result.headCommit = await this.api.getHead();
     return result;
   }
 }

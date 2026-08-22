@@ -22,6 +22,16 @@ const fileSchema = z.object({
 const refSchema = z.object({ object: z.object({ sha: z.string() }) });
 const commitSchema = z.object({ tree: z.object({ sha: z.string() }) });
 const shaSchema = z.object({ sha: z.string() });
+const commitsSchema = z.array(
+  z.object({
+    sha: z.string(),
+    commit: z.object({
+      message: z.string(),
+      author: z.object({ date: z.string() }),
+    }),
+  }),
+);
+const compareSchema = z.object({ ahead_by: z.number() });
 export type RemoteEntry = z.infer<typeof treeSchema>["tree"][number];
 const noProgress = (_message: string): void => undefined;
 
@@ -63,6 +73,36 @@ export class GitHubApi {
       sha: result.sha,
       content: decodeBase64(result.content.replace(/\n/g, "")),
     };
+  }
+
+  async getHead(): Promise<string> {
+    return (
+      await this.request(
+        `/git/ref/heads/${encodeURIComponent(this.settings.branch)}`,
+        refSchema,
+      )
+    ).object.sha;
+  }
+  async getRecentCommits(): Promise<
+    Array<{ sha: string; message: string; date: string }>
+  > {
+    const commits = await this.request(
+      `/commits?sha=${encodeURIComponent(this.settings.branch)}&per_page=10`,
+      commitsSchema,
+    );
+    return commits.map((commit) => ({
+      sha: commit.sha,
+      message: commit.commit.message.split("\n")[0] ?? "(no commit message)",
+      date: commit.commit.author.date,
+    }));
+  }
+  async commitsAhead(base: string, head: string): Promise<number> {
+    return (
+      await this.request(
+        `/compare/${encodeURIComponent(base)}...${encodeURIComponent(head)}`,
+        compareSchema,
+      )
+    ).ahead_by;
   }
 
   async createFilesCommit(

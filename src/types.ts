@@ -22,6 +22,7 @@ export interface GitHubSyncSettings {
   branch: string;
   vaultFolder: string;
   tokenSecretName: string;
+  lastSyncedCommit?: string;
   fileState: Record<string, z.infer<typeof fileStateSchema>>;
 }
 
@@ -38,4 +39,11 @@ export type SyncResult = {
   changed: number;
   conflicts: string[];
   requiresPull: string[];
+  headCommit?: string;
+};
+
+export type GitStatus = {
+  head: string;
+  behind?: number;
+  commits: Array<{ sha: string; message: string; date: string }>;
 };

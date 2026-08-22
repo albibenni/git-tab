@@ -1,1 +1,6 @@
-/* Intentionally empty: this plugin currently uses only native Obsidian UI components. */
+.git-pad-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.75rem;
+}

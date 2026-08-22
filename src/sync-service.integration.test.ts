@@ -123,6 +123,7 @@ describe("GitHub sync integration", () => {
     await expect(service.pull()).resolves.toMatchObject({
       changed: 0,
       conflicts: [],
+      headCommit: "commit-old",
     });
     expect(settings.fileState["note.md"]?.sha).toBe("remote-blob-sha");
     expect(
@@ -161,6 +162,7 @@ describe("GitHub sync integration", () => {
       "POST /git/trees",
       "POST /git/commits",
       "PATCH /git/refs/heads/main",
+      "GET /git/ref/heads/main",
     ]);
     expect(settings.fileState["note.md"]?.sha).toBe("blob-new");
     expect(progress).toEqual(
