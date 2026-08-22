@@ -23,15 +23,18 @@ const refSchema = z.object({ object: z.object({ sha: z.string() }) });
 const commitSchema = z.object({ tree: z.object({ sha: z.string() }) });
 const shaSchema = z.object({ sha: z.string() });
 export type RemoteEntry = z.infer<typeof treeSchema>["tree"][number];
+const noProgress = (_message: string): void => undefined;
 
 export class GitHubApi {
   constructor(
     private app: App,
     private settings: GitHubSyncSettings,
     private http: HttpClient = obsidianHttpClient,
+    private onProgress: (message: string) => void = noProgress,
   ) {}
 
   async listMarkdownFiles(): Promise<Map<string, RemoteEntry>> {
+    this.onProgress("Fetching repository index…");
     const root = this.root();
     const tree = await this.request(
       `/git/trees/${encodeURIComponent(this.settings.branch)}?recursive=1`,
@@ -51,6 +54,7 @@ export class GitHubApi {
   }
 
   async getFile(path: string): Promise<{ sha: string; content: string }> {
+    this.onProgress(`Fetching ${path}…`);
     const result = await this.request(
       `/contents/${remotePath(this.root(), path)}?ref=${encodeURIComponent(this.settings.branch)}`,
       fileSchema,
@@ -65,6 +69,7 @@ export class GitHubApi {
     files: Array<{ path: string; content: string }>,
   ): Promise<Map<string, string>> {
     if (files.length === 0) return new Map();
+    this.onProgress("Preparing a GitHub commit…");
     const head = await this.request(
       `/git/ref/heads/${encodeURIComponent(this.settings.branch)}`,
       refSchema,
@@ -74,6 +79,7 @@ export class GitHubApi {
       `/git/commits/${parent}`,
       commitSchema,
     );
+    this.onProgress(`Uploading ${files.length} changed note(s)…`);
     const blobs = await Promise.all(
       files.map(async (file) => ({
         path: file.path,
@@ -85,6 +91,7 @@ export class GitHubApi {
         ).sha,
       })),
     );
+    this.onProgress("Creating the Git tree…");
     const tree = await this.request("/git/trees", shaSchema, "POST", {
       base_tree: parentCommit.tree.sha,
       tree: blobs.map((blob) => ({
@@ -94,11 +101,13 @@ export class GitHubApi {
         sha: blob.sha,
       })),
     });
+    this.onProgress("Creating the Git commit…");
     const commit = await this.request("/git/commits", shaSchema, "POST", {
       message: `obsidian: sync ${files.length} note(s)`,
       tree: tree.sha,
       parents: [parent],
     });
+    this.onProgress("Updating the repository branch…");
     await this.request(
       `/git/refs/heads/${encodeURIComponent(this.settings.branch)}`,
       refSchema,

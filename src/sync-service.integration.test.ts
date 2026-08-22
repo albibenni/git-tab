@@ -112,10 +112,12 @@ describe("GitHub sync integration", () => {
     const app = createApp(vault);
     const settings = createSettings();
     const http = new FakeGitHubHttpClient("clone content");
+    const progress: string[] = [];
     const service = new SyncService(
       app,
       settings,
       new GitHubApi(app, settings, http),
+      (status) => progress.push(status),
     );
 
     await expect(service.pull()).resolves.toMatchObject({
@@ -126,6 +128,8 @@ describe("GitHub sync integration", () => {
     expect(
       await vault.read(vault.getAbstractFileByPath("note.md") as TFile),
     ).toBe("clone content");
+    expect(progress).toContain("Comparing 1 remote note(s)…");
+    expect(progress).toContain("Pull: checking 1/1…");
   });
 
   it("creates one GitHub commit for changed notes", async () => {
@@ -138,10 +142,11 @@ describe("GitHub sync integration", () => {
       contentHash: await contentHash("original content"),
     };
     const http = new FakeGitHubHttpClient("original content");
+    const progress: string[] = [];
     const service = new SyncService(
       app,
       settings,
-      new GitHubApi(app, settings, http),
+      new GitHubApi(app, settings, http, (status) => progress.push(status)),
     );
 
     await expect(service.push()).resolves.toMatchObject({
@@ -158,5 +163,15 @@ describe("GitHub sync integration", () => {
       "PATCH /git/refs/heads/main",
     ]);
     expect(settings.fileState["note.md"]?.sha).toBe("blob-new");
+    expect(progress).toEqual(
+      expect.arrayContaining([
+        "Fetching repository index…",
+        "Preparing a GitHub commit…",
+        "Uploading 1 changed note(s)…",
+        "Creating the Git tree…",
+        "Creating the Git commit…",
+        "Updating the repository branch…",
+      ]),
+    );
   });
 });

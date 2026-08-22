@@ -3,6 +3,8 @@ import { GitHubApi } from "./github-api";
 import type { GitHubSyncSettings, SyncResult } from "./types";
 import { contentHash } from "./utils";
 
+const noProgress = (_message: string): void => undefined;
+
 export class SyncService {
   private api: GitHubApi;
 
@@ -10,14 +12,19 @@ export class SyncService {
     private app: App,
     private settings: GitHubSyncSettings,
     api?: GitHubApi,
+    private onProgress: (message: string) => void = noProgress,
   ) {
-    this.api = api ?? new GitHubApi(app, settings);
+    this.api = api ?? new GitHubApi(app, settings, undefined, onProgress);
   }
 
   async pull(): Promise<SyncResult> {
     const remote = await this.api.listMarkdownFiles();
+    this.onProgress(`Comparing ${remote.size} remote note(s)…`);
     const result: SyncResult = { changed: 0, conflicts: [], requiresPull: [] };
+    let processed = 0;
     for (const [path, entry] of remote) {
+      processed++;
+      this.onProgress(`Pull: checking ${processed}/${remote.size}…`);
       const local = this.app.vault.getAbstractFileByPath(path);
       if (!(local instanceof TFile)) {
         const file = await this.api.getFile(path);
@@ -63,8 +70,14 @@ export class SyncService {
     const remote = await this.api.listMarkdownFiles();
     const result: SyncResult = { changed: 0, conflicts: [], requiresPull: [] };
     const changes: Array<{ path: string; content: string; hash: string }> = [];
-    for (const file of this.app.vault.getMarkdownFiles()) {
-      if (file.path.startsWith(".obsidian/")) continue;
+    const files = this.app.vault
+      .getMarkdownFiles()
+      .filter((file) => !file.path.startsWith(".obsidian/"));
+    this.onProgress(`Checking ${files.length} local note(s)…`);
+    let processed = 0;
+    for (const file of files) {
+      processed++;
+      this.onProgress(`Push: checking ${processed}/${files.length}…`);
       const content = await this.app.vault.read(file);
       const hash = await contentHash(content);
       const known = this.settings.fileState[file.path];
