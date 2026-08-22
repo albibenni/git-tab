@@ -1,4 +1,7 @@
-export class App {}
+export class App {
+  secretStorage = { getSecret: (_name: string): string | null => null };
+  vault!: unknown;
+}
 export class Plugin {
   app!: App;
   async loadData(): Promise<unknown> {
@@ -43,7 +46,7 @@ export class SecretComponent {
   }
 }
 export class TFile {
-  path = "";
+  constructor(public path = "") {}
 }
 export function normalizePath(path: string): string {
   return path;

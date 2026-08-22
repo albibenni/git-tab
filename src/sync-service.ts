@@ -4,19 +4,23 @@ import type { GitHubSyncSettings, SyncResult } from "./types";
 import { contentHash } from "./utils";
 
 export class SyncService {
+  private api: GitHubApi;
+
   constructor(
     private app: App,
     private settings: GitHubSyncSettings,
-  ) {}
+    api?: GitHubApi,
+  ) {
+    this.api = api ?? new GitHubApi(app, settings);
+  }
 
   async pull(): Promise<SyncResult> {
-    const api = new GitHubApi(this.app, this.settings);
-    const remote = await api.listMarkdownFiles();
+    const remote = await this.api.listMarkdownFiles();
     const result: SyncResult = { changed: 0, conflicts: [], requiresPull: [] };
     for (const [path, entry] of remote) {
       const local = this.app.vault.getAbstractFileByPath(path);
       if (!(local instanceof TFile)) {
-        const file = await api.getFile(path);
+        const file = await this.api.getFile(path);
         await this.app.vault.create(normalizePath(path), file.content);
         this.settings.fileState[path] = {
           sha: file.sha,
@@ -35,7 +39,7 @@ export class SyncService {
         };
         continue;
       }
-      const remoteFile = await api.getFile(path);
+      const remoteFile = await this.api.getFile(path);
       if (!known && localContent === remoteFile.content) {
         this.settings.fileState[path] = {
           sha: remoteFile.sha,
@@ -56,8 +60,7 @@ export class SyncService {
   }
 
   async push(): Promise<SyncResult> {
-    const api = new GitHubApi(this.app, this.settings);
-    const remote = await api.listMarkdownFiles();
+    const remote = await this.api.listMarkdownFiles();
     const result: SyncResult = { changed: 0, conflicts: [], requiresPull: [] };
     const changes: Array<{ path: string; content: string; hash: string }> = [];
     for (const file of this.app.vault.getMarkdownFiles()) {
@@ -71,7 +74,7 @@ export class SyncService {
         continue;
       }
       if (!known) {
-        const remoteFile = await api.getFile(file.path);
+        const remoteFile = await this.api.getFile(file.path);
         if (remoteFile.content === content)
           this.settings.fileState[file.path] = {
             sha: remoteFile.sha,
@@ -93,7 +96,7 @@ export class SyncService {
       }
       if (localChanged) changes.push({ path: file.path, content, hash });
     }
-    const shas = await api.createFilesCommit(changes);
+    const shas = await this.api.createFilesCommit(changes);
     for (const change of changes)
       this.settings.fileState[change.path] = {
         sha: shas.get(change.path) ?? "",

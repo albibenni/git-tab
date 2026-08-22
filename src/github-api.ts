@@ -1,5 +1,6 @@
-import { App, requestUrl } from "obsidian";
+import { App } from "obsidian";
 import { z } from "zod";
+import { type HttpClient, obsidianHttpClient } from "./http-client";
 import type { GitHubSyncSettings } from "./types";
 import { decodeBase64, encodeBase64, remotePath } from "./utils";
 
@@ -27,6 +28,7 @@ export class GitHubApi {
   constructor(
     private app: App,
     private settings: GitHubSyncSettings,
+    private http: HttpClient = obsidianHttpClient,
   ) {}
 
   async listMarkdownFiles(): Promise<Map<string, RemoteEntry>> {
@@ -121,7 +123,7 @@ export class GitHubApi {
     );
     if (!token)
       throw new Error("No GitHub credential is selected in settings.");
-    const response = await requestUrl({
+    const response = await this.http.request({
       url: `https://api.github.com/repos/${encodeURIComponent(this.settings.owner)}/${encodeURIComponent(this.settings.repo)}${path}`,
       method,
       headers: {
