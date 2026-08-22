@@ -1,0 +1,10 @@
+{
+  "id": "github-sync-mobile",
+  "name": "GitHub Sync Mobile",
+  "version": "0.1.0",
+  "minAppVersion": "1.11.4",
+  "description": "Sync Markdown files in an Obsidian vault folder with a GitHub repository.",
+  "author": "Your name",
+  "authorUrl": "",
+  "isDesktopOnly": false
+}

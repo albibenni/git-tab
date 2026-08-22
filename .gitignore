@@ -1,0 +1,20 @@
+# vscode
+.vscode
+
+# Intellij
+*.iml
+.idea
+
+# npm
+node_modules
+
+# Compiled release files
+main.js
+*.map
+
+# Obsidian
+data.json
+
+# Coverage and local system files
+coverage
+.DS_Store
