@@ -12,11 +12,16 @@ import { message } from "./utils";
 
 export default class GitHubSyncMobilePlugin extends Plugin {
   settings: GitHubSyncSettings = { ...defaultSettings };
+  syncStatus = "Idle";
+  private sidebar: GitPadSidebar | null = null;
   private syncing = false;
   async onload(): Promise<void> {
     await this.loadSettings();
     this.addSettingTab(new GitHubSyncSettingTab(this.app, this));
-    this.registerView(GIT_PAD_VIEW, (leaf) => new GitPadSidebar(leaf, this));
+    this.registerView(GIT_PAD_VIEW, (leaf) => {
+      this.sidebar = new GitPadSidebar(leaf, this);
+      return this.sidebar;
+    });
     this.addRibbonIcon("git-branch", "Open Git Pad sidebar", () => {
       void this.openSidebar();
     });
@@ -65,18 +70,25 @@ export default class GitHubSyncMobilePlugin extends Plugin {
       return;
     }
     this.syncing = true;
+    this.setSyncStatus(`Starting ${direction}…`);
     const progress = new Notice(`Git Pad: starting ${direction}…`, 0);
     try {
       const result = await new SyncService(
         this.app,
         this.settings,
         undefined,
-        (status) => progress.setMessage(`Git Pad: ${status}`),
+        (status) => {
+          this.setSyncStatus(status);
+          progress.setMessage(`Git Pad: ${status}`);
+        },
       )[direction]();
       await this.saveSettings();
       if (result.headCommit) this.settings.lastSyncedCommit = result.headCommit;
       await this.saveSettings();
       progress.hide();
+      this.setSyncStatus(
+        `Completed: ${result.changed} file(s), ${result.conflicts.length} conflict(s).`,
+      );
       new Notice(
         `GitHub Sync: ${direction === "pull" ? "pulled" : "pushed"} ${result.changed} file(s); ${result.conflicts.length} conflict(s); ${result.requiresPull.length} file(s) need a pull.`,
       );
@@ -84,11 +96,16 @@ export default class GitHubSyncMobilePlugin extends Plugin {
         console.warn("GitHub Sync", result);
     } catch (error) {
       progress.hide();
+      this.setSyncStatus(`Error: ${message(error)}`);
       console.error(error);
       new Notice(`GitHub Sync ${direction} failed: ${message(error)}`);
     } finally {
       this.syncing = false;
     }
+  }
+  private setSyncStatus(status: string): void {
+    this.syncStatus = status;
+    this.sidebar?.updateProgress(status);
   }
   async fetchStatus(): Promise<import("./types").GitStatus> {
     if (!this.configured())

@@ -5,6 +5,7 @@ import type { GitStatus } from "./types";
 export const GIT_PAD_VIEW = "git-pad-sidebar";
 
 export class GitPadSidebar extends ItemView {
+  private progressEl: HTMLElement | null = null;
   constructor(
     leaf: WorkspaceLeaf,
     private plugin: GitPadPlugin,
@@ -27,6 +28,10 @@ export class GitPadSidebar extends ItemView {
     const root = this.contentEl;
     root.empty();
     root.createEl("h4", { text: "Git Pad" });
+    this.progressEl = root.createDiv({
+      cls: "git-pad-progress",
+      text: this.plugin.syncStatus,
+    });
     const actions = root.createDiv({ cls: "git-pad-actions" });
     for (const [label, action] of [
       ["Fetch", () => this.plugin.fetchStatus()],
@@ -48,6 +53,9 @@ export class GitPadSidebar extends ItemView {
         `Status unavailable: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
+  }
+  updateProgress(status: string): void {
+    this.progressEl?.setText(status);
   }
   private status(container: HTMLElement, status: GitStatus): void {
     container.empty();

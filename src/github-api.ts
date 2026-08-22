@@ -189,6 +189,21 @@ export class GitHubApi {
       const detail =
         (response.json as { message?: string } | undefined)?.message ??
         response.text;
+      if (
+        response.status === 403 &&
+        response.headers["x-ratelimit-remaining"] === "0"
+      )
+        throw new Error(
+          `GitHub rate limit reached. Retry after ${response.headers["x-ratelimit-reset"] ?? "the reset time"}.`,
+        );
+      if (response.status === 401)
+        throw new Error(
+          "GitHub authentication failed. Replace the selected token.",
+        );
+      if (response.status === 404)
+        throw new Error(
+          "GitHub repository, branch, or token permission was not found.",
+        );
       throw new Error(`GitHub returned ${response.status}: ${detail}`);
     }
     const parsed = schema.safeParse(response.json);
