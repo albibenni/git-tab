@@ -17,6 +17,9 @@ export default class GitHubSyncMobilePlugin extends Plugin {
     await this.loadSettings();
     this.addSettingTab(new GitHubSyncSettingTab(this.app, this));
     this.registerView(GIT_PAD_VIEW, (leaf) => new GitPadSidebar(leaf, this));
+    this.addRibbonIcon("git-branch", "Open Git Pad sidebar", () => {
+      void this.openSidebar();
+    });
     this.addCommand({
       id: "open-sidebar",
       name: "Open Git Pad sidebar",
