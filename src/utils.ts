@@ -25,3 +25,20 @@ export function remotePath(root: string, localPath: string): string {
     .map(encodeURIComponent)
     .join("/");
 }
+
+export async function mapConcurrent<T>(
+  values: readonly T[],
+  limit: number,
+  map: (value: T, index: number) => Promise<void>,
+): Promise<void> {
+  let cursor = 0;
+  const worker = async (): Promise<void> => {
+    while (cursor < values.length) {
+      const index = cursor++;
+      await map(values[index] as T, index);
+    }
+  };
+  await Promise.all(
+    Array.from({ length: Math.min(limit, values.length) }, worker),
+  );
+}

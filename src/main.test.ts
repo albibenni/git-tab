@@ -1,4 +1,10 @@
-import { decodeBase64, encodeBase64, message, remotePath } from "./utils";
+import {
+  decodeBase64,
+  encodeBase64,
+  mapConcurrent,
+  message,
+  remotePath,
+} from "./utils";
 
 describe("encoding helpers", () => {
   it("round-trips Unicode Markdown", () => {
@@ -24,5 +30,17 @@ describe("encoding helpers", () => {
     expect(remotePath("My Notes/archive", "Daily/one & two.md")).toBe(
       "My%20Notes/archive/Daily/one%20%26%20two.md",
     );
+  });
+
+  it("limits concurrent work", async () => {
+    let active = 0;
+    let peak = 0;
+    await mapConcurrent([1, 2, 3, 4, 5], 2, async () => {
+      active++;
+      peak = Math.max(peak, active);
+      await Promise.resolve();
+      active--;
+    });
+    expect(peak).toBeLessThanOrEqual(2);
   });
 });

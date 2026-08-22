@@ -1,7 +1,7 @@
 import { App, normalizePath, TFile } from "obsidian";
 import { GitHubApi } from "./github-api";
 import type { GitHubSyncSettings, SyncResult } from "./types";
-import { contentHash } from "./utils";
+import { contentHash, mapConcurrent } from "./utils";
 
 const noProgress = (_message: string): void => undefined;
 
@@ -21,48 +21,50 @@ export class SyncService {
     const remote = await this.api.listMarkdownFiles();
     this.onProgress(`Comparing ${remote.size} remote note(s)…`);
     const result: SyncResult = { changed: 0, conflicts: [], requiresPull: [] };
-    let processed = 0;
-    for (const [path, entry] of remote) {
-      processed++;
-      this.onProgress(`Pull: checking ${processed}/${remote.size}…`);
-      const local = this.app.vault.getAbstractFileByPath(path);
-      if (!(local instanceof TFile)) {
-        const file = await this.api.getFile(path);
-        await this.app.vault.create(normalizePath(path), file.content);
-        this.settings.fileState[path] = {
-          sha: file.sha,
-          contentHash: await contentHash(file.content),
-        };
-        result.changed++;
-        continue;
-      }
-      const localContent = await this.app.vault.read(local);
-      const localHash = await contentHash(localContent);
-      const known = this.settings.fileState[path];
-      if (known?.sha === entry.sha) {
-        this.settings.fileState[path] = {
-          sha: entry.sha,
-          contentHash: known.contentHash ?? localHash,
-        };
-        continue;
-      }
-      const remoteFile = await this.api.getFile(path);
-      if (!known && localContent === remoteFile.content) {
-        this.settings.fileState[path] = {
-          sha: remoteFile.sha,
-          contentHash: localHash,
-        };
-      } else if (known?.contentHash && known.contentHash === localHash) {
-        await this.app.vault.modify(local, remoteFile.content);
-        this.settings.fileState[path] = {
-          sha: remoteFile.sha,
-          contentHash: await contentHash(remoteFile.content),
-        };
-        result.changed++;
-      } else {
-        result.conflicts.push(path);
-      }
-    }
+    await mapConcurrent(
+      [...remote.entries()],
+      4,
+      async ([path, entry], index) => {
+        this.onProgress(`Pull: checking ${index + 1}/${remote.size}…`);
+        const local = this.app.vault.getAbstractFileByPath(path);
+        if (!(local instanceof TFile)) {
+          const file = await this.api.getFile(path);
+          await this.app.vault.create(normalizePath(path), file.content);
+          this.settings.fileState[path] = {
+            sha: file.sha,
+            contentHash: await contentHash(file.content),
+          };
+          result.changed++;
+          return;
+        }
+        const localContent = await this.app.vault.read(local);
+        const localHash = await contentHash(localContent);
+        const known = this.settings.fileState[path];
+        if (known?.sha === entry.sha) {
+          this.settings.fileState[path] = {
+            sha: entry.sha,
+            contentHash: known.contentHash ?? localHash,
+          };
+          return;
+        }
+        const remoteFile = await this.api.getFile(path);
+        if (!known && localContent === remoteFile.content) {
+          this.settings.fileState[path] = {
+            sha: remoteFile.sha,
+            contentHash: localHash,
+          };
+        } else if (known?.contentHash && known.contentHash === localHash) {
+          await this.app.vault.modify(local, remoteFile.content);
+          this.settings.fileState[path] = {
+            sha: remoteFile.sha,
+            contentHash: await contentHash(remoteFile.content),
+          };
+          result.changed++;
+        } else {
+          result.conflicts.push(path);
+        }
+      },
+    );
     if (result.conflicts.length === 0)
       result.headCommit = await this.api.getHead();
     return result;
