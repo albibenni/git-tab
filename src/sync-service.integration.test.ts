@@ -9,6 +9,7 @@ import { contentHash, encodeBase64 } from "./utils";
 class MemoryVault {
   readonly files = new Map<string, { file: TFile; content: string }>();
   readonly folders = new Map<string, TFile>();
+  readonly configDir = ".obsidian";
 
   add(path: string, content: string): TFile {
     const file = new TFile();
@@ -47,6 +48,10 @@ class MemoryVault {
 
   getMarkdownFiles(): TFile[] {
     return [...this.files.values()].map((entry) => entry.file);
+  }
+
+  getFiles(): TFile[] {
+    return this.getMarkdownFiles();
   }
 
   read(file: TFile): Promise<string> {
@@ -215,5 +220,28 @@ describe("GitHub sync integration", () => {
         vault.getAbstractFileByPath("Inbox/2026/note.md") as TFile,
       ),
     ).toBe("nested content");
+  });
+
+  it("pulls safe Obsidian configuration without pulling installed plugins", async () => {
+    const vault = new MemoryVault();
+    const app = createApp(vault);
+    const settings = createSettings();
+    const http = new FakeGitHubHttpClient(
+      '{"showLineNumber":true}',
+      "config-blob-sha",
+      ".obsidian/app.json",
+    );
+    const service = new SyncService(
+      app,
+      settings,
+      new GitHubApi(app, settings, http),
+    );
+
+    await expect(service.pull()).resolves.toMatchObject({ changed: 1 });
+    expect(
+      await vault.read(
+        vault.getAbstractFileByPath(".obsidian/app.json") as TFile,
+      ),
+    ).toBe('{"showLineNumber":true}');
   });
 });

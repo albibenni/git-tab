@@ -1,7 +1,13 @@
 import { App, normalizePath, TFile } from "obsidian";
 import { GitHubApi } from "./github-api";
 import type { GitHubSyncSettings, SyncResult } from "./types";
-import { contentHash, gitBlobSha, mapConcurrent, withTimeout } from "./utils";
+import {
+  contentHash,
+  gitBlobSha,
+  isSyncableVaultPath,
+  mapConcurrent,
+  withTimeout,
+} from "./utils";
 
 const noProgress = (_message: string): void => undefined;
 const pullNoteTimeoutMs = 60_000;
@@ -28,7 +34,7 @@ export class SyncService {
     const controller = new AbortController();
     try {
       const remote = await withTimeout(
-        this.api.listMarkdownFiles(),
+        this.api.listSyncFiles(),
         pullNoteTimeoutMs,
         "Fetching repository index",
         () => controller.abort(),
@@ -179,12 +185,18 @@ export class SyncService {
   }
 
   async push(): Promise<SyncResult> {
-    const remote = await this.api.listMarkdownFiles();
+    const remote = await this.api.listSyncFiles();
     const result: SyncResult = { changed: 0, conflicts: [], requiresPull: [] };
     const changes: Array<{ path: string; content: string; hash: string }> = [];
     const files = this.app.vault
-      .getMarkdownFiles()
-      .filter((file) => !file.path.startsWith(`${this.app.vault.configDir}/`));
+      .getFiles()
+      .filter((file) =>
+        isSyncableVaultPath(
+          file.path,
+          this.app.vault.configDir,
+          this.settings.syncObsidianConfig,
+        ),
+      );
     this.onProgress(`Checking ${files.length} local note(s)…`);
     let processed = 0;
     for (const file of files) {

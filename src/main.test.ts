@@ -2,6 +2,7 @@ import {
   decodeBase64,
   encodeBase64,
   gitBlobSha,
+  isSyncableVaultPath,
   mapConcurrent,
   message,
   remotePath,
@@ -47,6 +48,32 @@ describe("encoding helpers", () => {
     expect(remotePath("My Notes/archive", "Daily/one & two.md")).toBe(
       "My%20Notes/archive/Daily/one%20%26%20two.md",
     );
+  });
+
+  it("syncs safe Obsidian configuration but never installed plugins", () => {
+    expect(isSyncableVaultPath(".obsidian/app.json", ".obsidian", true)).toBe(
+      true,
+    );
+    expect(
+      isSyncableVaultPath(".obsidian/snippets/mobile.css", ".obsidian", true),
+    ).toBe(true);
+    expect(
+      isSyncableVaultPath(
+        ".obsidian/plugins/git-pad/data.json",
+        ".obsidian",
+        true,
+      ),
+    ).toBe(false);
+    expect(
+      isSyncableVaultPath(
+        ".obsidian/plugins/obsidian42-brat/data.json",
+        ".obsidian",
+        true,
+      ),
+    ).toBe(false);
+    expect(
+      isSyncableVaultPath(".obsidian/workspace-mobile.json", ".obsidian", true),
+    ).toBe(false);
   });
 
   it("limits concurrent work", async () => {

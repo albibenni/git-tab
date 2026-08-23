@@ -1,11 +1,12 @@
 # Git Pad
 
-A mobile-first Obsidian plugin that synchronizes Markdown files with a GitHub repository through the GitHub API. It works on iPadOS because it does not rely on native Git, Node.js, Electron, or SSH.
+A mobile-first Obsidian plugin that synchronizes Markdown files and selected Obsidian configuration with a GitHub repository through the GitHub API. It works on iPadOS because it does not rely on native Git, Node.js, Electron, or SSH.
 
 ## Current scope
 
 - Pull Markdown files from a repository branch into the vault.
 - Push changed Markdown files as one GitHub commit.
+- Optionally sync safe `.obsidian` JSON and CSS files; installed plugins and workspace layouts are always excluded.
 - Optional remote subfolder.
 - Detect per-file changes made remotely since the last successful sync and leave conflicts untouched.
 
@@ -15,7 +16,7 @@ It deliberately excludes attachments, deletes, automatic background sync, and co
 
 ## Clone first, install later
 
-This is supported. Clone or otherwise copy the repository into an Obsidian vault, then install and configure the plugin. On the first pull or push, identical local and GitHub notes are adopted as the sync baseline without being overwritten or committed. If the two copies differ, the plugin reports a conflict and preserves both copies. Plugin settings in `.obsidian/` are never synchronized because only Markdown files are in scope.
+This is supported. Clone or otherwise copy the repository into an Obsidian vault, then install and configure the plugin. On the first pull or push, identical local and GitHub notes are adopted as the sync baseline without being overwritten or committed. If the two copies differ, the plugin reports a conflict and preserves both copies. With **Sync Obsidian configuration** enabled (the default), safe JSON and CSS files in `.obsidian/` are synchronized. All `.obsidian/plugins/` contents—including Git Pad and BRAT—and device-specific `workspace*.json` files are always excluded.
 
 ## Set up
 

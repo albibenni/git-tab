@@ -2,7 +2,12 @@ import { App } from "obsidian";
 import { z } from "zod";
 import { type HttpClient, obsidianHttpClient } from "./http-client";
 import type { GitHubSyncSettings } from "./types";
-import { decodeBase64, encodeBase64, remotePath } from "./utils";
+import {
+  decodeBase64,
+  encodeBase64,
+  isSyncableVaultPath,
+  remotePath,
+} from "./utils";
 
 const treeSchema = z.object({
   tree: z.array(
@@ -43,7 +48,7 @@ export class GitHubApi {
     private onProgress: (message: string) => void = noProgress,
   ) {}
 
-  async listMarkdownFiles(): Promise<Map<string, RemoteEntry>> {
+  async listSyncFiles(): Promise<Map<string, RemoteEntry>> {
     this.onProgress("Fetching repository index…");
     const root = this.root();
     const tree = await this.request(
@@ -56,9 +61,18 @@ export class GitHubApi {
       );
     const entries = new Map<string, RemoteEntry>();
     for (const entry of tree.tree) {
-      if (entry.type !== "blob" || !entry.path.endsWith(".md")) continue;
+      if (entry.type !== "blob") continue;
       if (root && !entry.path.startsWith(`${root}/`)) continue;
-      entries.set(root ? entry.path.slice(root.length + 1) : entry.path, entry);
+      const path = root ? entry.path.slice(root.length + 1) : entry.path;
+      if (
+        !isSyncableVaultPath(
+          path,
+          this.app.vault.configDir,
+          this.settings.syncObsidianConfig,
+        )
+      )
+        continue;
+      entries.set(path, entry);
     }
     return entries;
   }

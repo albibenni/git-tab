@@ -57,6 +57,11 @@ export class GitHubSyncSettingTab extends PluginSettingTab {
             },
           },
           {
+            name: "Sync Obsidian configuration",
+            desc: "Sync .obsidian JSON and CSS, excluding all installed plugins and device-specific workspace layouts.",
+            control: { type: "toggle" as const, key: "syncObsidianConfig" },
+          },
+          {
             name: "GitHub credential",
             desc: "Select or create a secret. Only its name is saved in plugin settings.",
             render: (setting: Setting) => {
@@ -82,6 +87,8 @@ export class GitHubSyncSettingTab extends PluginSettingTab {
   async setControlValue(key: string, value: unknown): Promise<void> {
     if (key === "pullConcurrency" && typeof value === "number") {
       this.plugin.settings.pullConcurrency = value;
+    } else if (key === "syncObsidianConfig" && typeof value === "boolean") {
+      this.plugin.settings.syncObsidianConfig = value;
     } else if (
       textSettings.some((setting) => setting.key === key) &&
       typeof value === "string"
@@ -115,6 +122,19 @@ export class GitHubSyncSettingTab extends PluginSettingTab {
           .setDynamicTooltip()
           .onChange(async (value) => {
             this.plugin.settings.pullConcurrency = value;
+            await this.plugin.saveSettings();
+          }),
+      );
+    new Setting(containerEl)
+      .setName("Sync Obsidian configuration")
+      .setDesc(
+        "Sync .obsidian JSON and CSS, excluding all installed plugins and device-specific workspace layouts.",
+      )
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.syncObsidianConfig)
+          .onChange(async (value) => {
+            this.plugin.settings.syncObsidianConfig = value;
             await this.plugin.saveSettings();
           }),
       );

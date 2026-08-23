@@ -1,3 +1,5 @@
+import { normalizePath } from "obsidian";
+
 export function encodeBase64(value: string): string {
   return btoa(bytesToBinaryString(new TextEncoder().encode(value)));
 }
@@ -70,6 +72,25 @@ export function remotePath(root: string, localPath: string): string {
     .flatMap((path) => path.split("/"))
     .map(encodeURIComponent)
     .join("/");
+}
+
+export function isSyncableVaultPath(
+  path: string,
+  configDir: string,
+  syncObsidianConfig: boolean,
+): boolean {
+  const normalizedPath = normalizePath(path);
+  const normalizedConfigDir = normalizePath(configDir);
+  if (!normalizedPath.startsWith(`${normalizedConfigDir}/`))
+    return normalizedPath.endsWith(".md");
+  if (!syncObsidianConfig) return false;
+  const configPath = normalizedPath.slice(normalizedConfigDir.length + 1);
+  if (
+    configPath.startsWith("plugins/") ||
+    (configPath.startsWith("workspace") && configPath.endsWith(".json"))
+  )
+    return false;
+  return configPath.endsWith(".json") || configPath.endsWith(".css");
 }
 
 export async function mapConcurrent<T>(
