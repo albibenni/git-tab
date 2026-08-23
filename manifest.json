@@ -1,7 +1,7 @@
 {
   "id": "git-pad",
   "name": "Git Pad",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "minAppVersion": "1.11.4",
   "description": "Sync Markdown files in a vault folder with a GitHub repository.",
   "author": "AlbiBenni",
