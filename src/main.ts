@@ -82,7 +82,6 @@ export default class GitHubSyncMobilePlugin extends Plugin {
     this.setSyncStatus(`Starting ${direction}…`);
     const progress = new Notice(`Git Pad: starting ${direction}…`, 0);
     const startedAt = Date.now();
-    console.info("Git Pad: sync started", { direction });
     try {
       const result = await new SyncService(
         this.app,
@@ -105,13 +104,6 @@ export default class GitHubSyncMobilePlugin extends Plugin {
       );
       if (result.requiresReload)
         new Notice("Git Pad: reload Obsidian to activate cloned plugin files.");
-      console.info("Git Pad: sync completed", {
-        direction,
-        durationMs: Date.now() - startedAt,
-        changed: result.changed,
-        conflicts: result.conflicts.length,
-        requiresPull: result.requiresPull.length,
-      });
       if (result.conflicts.length || result.requiresPull.length) {
         console.warn("Git Pad: sync requires attention", result);
         if (result.conflicts.length)
@@ -150,9 +142,6 @@ export default class GitHubSyncMobilePlugin extends Plugin {
           ? await api.commitsAhead(this.settings.lastSyncedCommit, head)
           : undefined,
       };
-      console.info("Git Pad: status fetched", {
-        durationMs: Date.now() - startedAt,
-      });
       return status;
     } catch (error) {
       console.error("Git Pad: status fetch failed", {

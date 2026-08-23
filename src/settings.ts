@@ -62,7 +62,7 @@ export class GitHubSyncSettingTab extends PluginSettingTab {
           },
           {
             name: "Sync Obsidian configuration",
-            desc: "Sync selected .obsidian settings, snippets, and themes. All installed plugins and device-specific files stay on this device.",
+            desc: `Sync selected ${this.app.vault.configDir} settings, snippets, and themes. All installed plugins and device-specific files stay on this device.`,
             control: { type: "toggle" as const, key: "syncObsidianConfig" },
           },
           {
@@ -139,7 +139,7 @@ export class GitHubSyncSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName("Sync Obsidian configuration")
       .setDesc(
-        "Sync selected .obsidian settings, snippets, and themes. All installed plugins and device-specific files stay on this device.",
+        `Sync selected ${this.app.vault.configDir} settings, snippets, and themes. All installed plugins and device-specific files stay on this device.`,
       )
       .addToggle((toggle) =>
         toggle

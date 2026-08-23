@@ -51,12 +51,12 @@ export async function withTimeout<T>(
   description: string,
   onTimeout?: () => void,
 ): Promise<T> {
-  let timeout: ReturnType<typeof setTimeout> | undefined;
+  let timeout: ReturnType<typeof window.setTimeout> | undefined;
   try {
     return await Promise.race([
       operation,
       new Promise<never>((_, reject) => {
-        timeout = setTimeout(() => {
+        timeout = window.setTimeout(() => {
           onTimeout?.();
           reject(
             new Error(`${description} timed out after ${timeoutMs / 1000}s.`),
@@ -65,7 +65,7 @@ export async function withTimeout<T>(
       }),
     ]);
   } finally {
-    if (timeout !== undefined) clearTimeout(timeout);
+    if (timeout !== undefined) window.clearTimeout(timeout);
   }
 }
 
