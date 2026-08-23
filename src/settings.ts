@@ -58,7 +58,7 @@ export class GitHubSyncSettingTab extends PluginSettingTab {
           },
           {
             name: "Sync Obsidian configuration",
-            desc: "Sync .obsidian JSON and CSS, excluding all installed plugins and device-specific workspace layouts.",
+            desc: "Sync selected .obsidian settings, snippets, and themes. All installed plugins and device-specific files stay on this device.",
             control: { type: "toggle" as const, key: "syncObsidianConfig" },
           },
           {
@@ -128,7 +128,7 @@ export class GitHubSyncSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName("Sync Obsidian configuration")
       .setDesc(
-        "Sync .obsidian JSON and CSS, excluding all installed plugins and device-specific workspace layouts.",
+        "Sync selected .obsidian settings, snippets, and themes. All installed plugins and device-specific files stay on this device.",
       )
       .addToggle((toggle) =>
         toggle

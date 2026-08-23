@@ -46,6 +46,7 @@ export class SyncService {
         conflicts: [],
         requiresPull: [],
       };
+      let completed = 0;
       await mapConcurrent(
         [...remote.entries()],
         this.settings.pullConcurrency,
@@ -62,6 +63,10 @@ export class SyncService {
               () => controller.abort(),
             );
             throwIfAborted(controller.signal);
+            completed++;
+            this.onProgress(
+              `Pull: completed ${completed}/${remote.size} — ${path}`,
+            );
           } catch (error) {
             controller.abort();
             throw error;
@@ -202,8 +207,16 @@ export class SyncService {
     for (const file of files) {
       processed++;
       this.onProgress(`Push: checking ${processed}/${files.length}…`);
-      const content = await this.app.vault.read(file);
-      const hash = await contentHash(content);
+      const content = await withTimeout(
+        this.app.vault.read(file),
+        pullNoteTimeoutMs,
+        `Reading ${file.path}`,
+      );
+      const hash = await withTimeout(
+        contentHash(content),
+        pullNoteTimeoutMs,
+        `Hashing ${file.path}`,
+      );
       const known = this.settings.fileState[file.path];
       const remoteEntry = remote.get(file.path);
       if (!remoteEntry) {

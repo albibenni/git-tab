@@ -7,6 +7,7 @@ import {
   encodeBase64,
   isSyncableVaultPath,
   remotePath,
+  withTimeout,
 } from "./utils";
 
 const treeSchema = z.object({
@@ -39,6 +40,7 @@ const commitsSchema = z.array(
 const compareSchema = z.object({ ahead_by: z.number() });
 export type RemoteEntry = z.infer<typeof treeSchema>["tree"][number];
 const noProgress = (_message: string): void => undefined;
+const requestTimeoutMs = 60_000;
 
 export class GitHubApi {
   constructor(
@@ -186,19 +188,25 @@ export class GitHubApi {
     );
     if (!token)
       throw new Error("No GitHub credential is selected in settings.");
-    const response = await this.http.request({
-      url: `https://api.github.com/repos/${encodeURIComponent(this.settings.owner)}/${encodeURIComponent(this.settings.repo)}${path}`,
-      method,
-      headers: {
-        Accept: "application/vnd.github+json",
-        Authorization: `Bearer ${token}`,
-        "X-GitHub-Api-Version": "2022-11-28",
-      },
-      ...(body === undefined
-        ? {}
-        : { body: JSON.stringify(body), contentType: "application/json" }),
-      throw: false,
-    });
+    const description = `GitHub ${method} ${path}`;
+    const response = await withTimeout(
+      this.http.request({
+        url: `https://api.github.com/repos/${encodeURIComponent(this.settings.owner)}/${encodeURIComponent(this.settings.repo)}${path}`,
+        method,
+        headers: {
+          Accept: "application/vnd.github+json",
+          Authorization: `Bearer ${token}`,
+          "X-GitHub-Api-Version": "2022-11-28",
+        },
+        ...(body === undefined
+          ? {}
+          : { body: JSON.stringify(body), contentType: "application/json" }),
+        throw: false,
+      }),
+      requestTimeoutMs,
+      description,
+      () => console.warn("Git Pad: GitHub request timed out", { method, path }),
+    );
     if (response.status >= 300) {
       const detail =
         (response.json as { message?: string } | undefined)?.message ??

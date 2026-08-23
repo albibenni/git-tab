@@ -55,6 +55,13 @@ describe("encoding helpers", () => {
       true,
     );
     expect(
+      isSyncableVaultPath(
+        ".obsidian/community-plugins.json",
+        ".obsidian",
+        true,
+      ),
+    ).toBe(true);
+    expect(
       isSyncableVaultPath(".obsidian/snippets/mobile.css", ".obsidian", true),
     ).toBe(true);
     expect(
@@ -74,6 +81,12 @@ describe("encoding helpers", () => {
     expect(
       isSyncableVaultPath(".obsidian/workspace-mobile.json", ".obsidian", true),
     ).toBe(false);
+    expect(
+      isSyncableVaultPath(".obsidian/cache/graph.json", ".obsidian", true),
+    ).toBe(false);
+    expect(isSyncableVaultPath(".obsidian/app.json", ".obsidian", false)).toBe(
+      false,
+    );
   });
 
   it("limits concurrent work", async () => {

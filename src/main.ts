@@ -78,6 +78,8 @@ export default class GitHubSyncMobilePlugin extends Plugin {
     this.syncing = true;
     this.setSyncStatus(`Starting ${direction}…`);
     const progress = new Notice(`Git Pad: starting ${direction}…`, 0);
+    const startedAt = Date.now();
+    console.info("Git Pad: sync started", { direction });
     try {
       const result = await new SyncService(
         this.app,
@@ -98,12 +100,26 @@ export default class GitHubSyncMobilePlugin extends Plugin {
       new Notice(
         `GitHub Sync: ${direction === "pull" ? "pulled" : "pushed"} ${result.changed} file(s); ${result.conflicts.length} conflict(s); ${result.requiresPull.length} file(s) need a pull.`,
       );
-      if (result.conflicts.length || result.requiresPull.length)
-        console.warn("GitHub Sync", result);
+      console.info("Git Pad: sync completed", {
+        direction,
+        durationMs: Date.now() - startedAt,
+        changed: result.changed,
+        conflicts: result.conflicts.length,
+        requiresPull: result.requiresPull.length,
+      });
+      if (result.conflicts.length || result.requiresPull.length) {
+        console.warn("Git Pad: sync requires attention", result);
+        if (result.conflicts.length)
+          console.warn("Git Pad: conflicting paths", result.conflicts);
+      }
     } catch (error) {
       progress.hide();
       this.setSyncStatus(`Error: ${message(error)}`);
-      console.error(error);
+      console.error("Git Pad: sync failed", {
+        direction,
+        durationMs: Date.now() - startedAt,
+        error,
+      });
       new Notice(`GitHub Sync ${direction} failed: ${message(error)}`);
     } finally {
       this.syncing = false;
@@ -116,15 +132,28 @@ export default class GitHubSyncMobilePlugin extends Plugin {
   async fetchStatus(): Promise<import("./types").GitStatus> {
     if (!this.configured())
       throw new Error("Configure repository and credential first.");
-    const api = new GitHubApi(this.app, this.settings);
-    const head = await api.getHead();
-    return {
-      head,
-      commits: await api.getRecentCommits(),
-      behind: this.settings.lastSyncedCommit
-        ? await api.commitsAhead(this.settings.lastSyncedCommit, head)
-        : undefined,
-    };
+    const startedAt = Date.now();
+    try {
+      const api = new GitHubApi(this.app, this.settings);
+      const head = await api.getHead();
+      const status = {
+        head,
+        commits: await api.getRecentCommits(),
+        behind: this.settings.lastSyncedCommit
+          ? await api.commitsAhead(this.settings.lastSyncedCommit, head)
+          : undefined,
+      };
+      console.info("Git Pad: status fetched", {
+        durationMs: Date.now() - startedAt,
+      });
+      return status;
+    } catch (error) {
+      console.error("Git Pad: status fetch failed", {
+        durationMs: Date.now() - startedAt,
+        error,
+      });
+      throw error;
+    }
   }
   private async openSidebar(): Promise<void> {
     const leaf = this.app.workspace.getRightLeaf(false);

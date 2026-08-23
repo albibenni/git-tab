@@ -1,5 +1,24 @@
 import { normalizePath } from "obsidian";
 
+const syncableObsidianConfigFiles = new Set([
+  "app.json",
+  "appearance.json",
+  "backlink.json",
+  "bookmarks.json",
+  "canvas.json",
+  "community-plugins.json",
+  "core-plugins.json",
+  "daily-notes.json",
+  "editor.json",
+  "file-explorer.json",
+  "graph.json",
+  "hotkeys.json",
+  "outgoing-link.json",
+  "search.json",
+  "tag-pane.json",
+  "templates.json",
+]);
+
 export function encodeBase64(value: string): string {
   return btoa(bytesToBinaryString(new TextEncoder().encode(value)));
 }
@@ -85,12 +104,11 @@ export function isSyncableVaultPath(
     return normalizedPath.endsWith(".md");
   if (!syncObsidianConfig) return false;
   const configPath = normalizedPath.slice(normalizedConfigDir.length + 1);
-  if (
-    configPath.startsWith("plugins/") ||
-    (configPath.startsWith("workspace") && configPath.endsWith(".json"))
-  )
-    return false;
-  return configPath.endsWith(".json") || configPath.endsWith(".css");
+  if (configPath.startsWith("plugins/")) return false;
+  if (configPath.startsWith("snippets/")) return configPath.endsWith(".css");
+  if (configPath.startsWith("themes/"))
+    return configPath.endsWith(".css") || configPath.endsWith("/manifest.json");
+  return syncableObsidianConfigFiles.has(configPath);
 }
 
 export async function mapConcurrent<T>(
