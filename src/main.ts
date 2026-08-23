@@ -27,18 +27,24 @@ export default class GitHubSyncMobilePlugin extends Plugin {
     });
     this.addCommand({
       id: "open-sidebar",
-      name: "Open Git Pad sidebar",
-      callback: () => this.openSidebar(),
+      name: "Open sidebar",
+      callback: () => {
+        void this.openSidebar();
+      },
     });
     this.addCommand({
       id: "pull",
       name: "Pull Markdown from GitHub",
-      callback: () => this.runSync("pull"),
+      callback: () => {
+        void this.runSync("pull");
+      },
     });
     this.addCommand({
       id: "push",
       name: "Push Markdown to GitHub",
-      callback: () => this.runSync("push"),
+      callback: () => {
+        void this.runSync("push");
+      },
     });
   }
   async loadSettings(): Promise<void> {

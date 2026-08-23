@@ -90,7 +90,7 @@ export class SyncService {
     const changes: Array<{ path: string; content: string; hash: string }> = [];
     const files = this.app.vault
       .getMarkdownFiles()
-      .filter((file) => !file.path.startsWith(".obsidian/"));
+      .filter((file) => !file.path.startsWith(`${this.app.vault.configDir}/`));
     this.onProgress(`Checking ${files.length} local note(s)…`);
     let processed = 0;
     for (const file of files) {

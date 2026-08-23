@@ -1,5 +1,30 @@
-import { App, PluginSettingTab, SecretComponent, Setting } from "obsidian";
+import {
+  App,
+  PluginSettingTab,
+  SecretComponent,
+  Setting,
+  type SettingDefinitionItem,
+} from "obsidian";
 import type GitHubSyncMobilePlugin from "./main";
+import type { GitHubSyncSettings } from "./types";
+
+type TextSettingKey = "owner" | "repo" | "branch" | "vaultFolder";
+
+const textSettings: Array<{ key: TextSettingKey; name: string; desc: string }> =
+  [
+    {
+      key: "owner",
+      name: "Repository owner",
+      desc: "GitHub user or organization.",
+    },
+    { key: "repo", name: "Repository name", desc: "For example: notes." },
+    { key: "branch", name: "Branch", desc: "Usually main." },
+    {
+      key: "vaultFolder",
+      name: "Remote folder",
+      desc: "Optional repository subfolder.",
+    },
+  ];
 
 export class GitHubSyncSettingTab extends PluginSettingTab {
   constructor(
@@ -8,21 +33,80 @@ export class GitHubSyncSettingTab extends PluginSettingTab {
   ) {
     super(app, plugin);
   }
+
+  getSettingDefinitions(): SettingDefinitionItem[] {
+    return [
+      {
+        type: "group",
+        heading: "Git Pad",
+        items: [
+          ...textSettings.map(({ key, name, desc }) => ({
+            name,
+            desc,
+            control: { type: "text" as const, key },
+          })),
+          {
+            name: "First Pull speed",
+            desc: "Concurrent note checks during first Pull. Use 2–4 on older iPads and 6–8 on recent iPads; higher values use more memory and can trigger GitHub limits.",
+            control: {
+              type: "slider" as const,
+              key: "pullConcurrency",
+              min: 1,
+              max: 12,
+              step: 1,
+            },
+          },
+          {
+            name: "GitHub credential",
+            desc: "Select or create a secret. Only its name is saved in plugin settings.",
+            render: (setting: Setting) => {
+              setting.addComponent((element) =>
+                new SecretComponent(this.app, element)
+                  .setValue(this.plugin.settings.tokenSecretName)
+                  .onChange(async (value) => {
+                    this.plugin.settings.tokenSecretName = value;
+                    await this.plugin.saveSettings();
+                  }),
+              );
+            },
+          },
+        ],
+      },
+    ];
+  }
+
+  getControlValue(key: string): unknown {
+    return this.plugin.settings[key as keyof GitHubSyncSettings];
+  }
+
+  async setControlValue(key: string, value: unknown): Promise<void> {
+    if (key === "pullConcurrency" && typeof value === "number") {
+      this.plugin.settings.pullConcurrency = value;
+    } else if (
+      textSettings.some((setting) => setting.key === key) &&
+      typeof value === "string"
+    ) {
+      this.plugin.settings[key as TextSettingKey] = value.trim();
+    } else return;
+    await this.plugin.saveSettings();
+  }
+
+  // Obsidian before 1.13 uses this imperative fallback.
   display(): void {
     const { containerEl } = this;
     containerEl.empty();
-    containerEl.createEl("h2", { text: "Git Pad" });
-    containerEl.createEl("p", {
-      text: "A clone can be installed and configured later: identical notes are adopted without being rewritten.",
-    });
-    this.text("Repository owner", "GitHub user or organization.", "owner");
-    this.text("Repository name", "For example: notes.", "repo");
-    this.text("Branch", "Usually main.", "branch");
-    this.text("Remote folder", "Optional repository subfolder.", "vaultFolder");
+    new Setting(containerEl)
+      .setName("Git Pad")
+      .setDesc(
+        "A clone can be installed and configured later: identical notes are adopted without being rewritten.",
+      )
+      .setHeading();
+    for (const { key, name, desc } of textSettings)
+      this.addText(name, desc, key);
     new Setting(containerEl)
       .setName("First Pull speed")
       .setDesc(
-        "Concurrent note checks during first Pull. Use 2–4 on older iPads and 6–8 on recent iPads; higher values use more memory and can trigger GitHub limits.",
+        "Concurrent note checks during first Pull. Higher values use more memory and can trigger GitHub limits.",
       )
       .addSlider((slider) =>
         slider
@@ -48,17 +132,14 @@ export class GitHubSyncSettingTab extends PluginSettingTab {
           }),
       );
   }
-  private text(
-    name: string,
-    description: string,
-    field: "owner" | "repo" | "branch" | "vaultFolder",
-  ): void {
+
+  private addText(name: string, desc: string, key: TextSettingKey): void {
     new Setting(this.containerEl)
       .setName(name)
-      .setDesc(description)
+      .setDesc(desc)
       .addText((text) =>
-        text.setValue(this.plugin.settings[field]).onChange(async (value) => {
-          this.plugin.settings[field] = value.trim();
+        text.setValue(this.plugin.settings[key]).onChange(async (value) => {
+          this.plugin.settings[key] = value.trim();
           await this.plugin.saveSettings();
         }),
       );

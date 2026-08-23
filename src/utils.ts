@@ -1,8 +1,18 @@
 export function encodeBase64(value: string): string {
-  return btoa(unescape(encodeURIComponent(value)));
+  return btoa(bytesToBinaryString(new TextEncoder().encode(value)));
 }
 export function decodeBase64(value: string): string {
-  return decodeURIComponent(escape(atob(value)));
+  return new TextDecoder().decode(binaryStringToBytes(atob(value)));
+}
+
+function bytesToBinaryString(bytes: Uint8Array): string {
+  let result = "";
+  for (const byte of bytes) result += String.fromCharCode(byte);
+  return result;
+}
+
+function binaryStringToBytes(value: string): Uint8Array {
+  return Uint8Array.from(value, (character) => character.charCodeAt(0));
 }
 export function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
