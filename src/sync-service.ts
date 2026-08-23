@@ -93,9 +93,11 @@ export class SyncService {
       throwIfAborted(signal);
       await this.app.vault.create(normalizePath(path), file.content);
       throwIfAborted(signal);
+      const fileContentHash = await contentHash(file.content);
+      throwIfAborted(signal);
       this.settings.fileState[path] = {
         sha: file.sha,
-        contentHash: await contentHash(file.content),
+        contentHash: fileContentHash,
       };
       result.changed++;
       return;
@@ -134,9 +136,11 @@ export class SyncService {
     } else if (known?.contentHash && known.contentHash === localHash) {
       await this.app.vault.modify(local, remoteFile.content);
       throwIfAborted(signal);
+      const remoteContentHash = await contentHash(remoteFile.content);
+      throwIfAborted(signal);
       this.settings.fileState[path] = {
         sha: remoteFile.sha,
-        contentHash: await contentHash(remoteFile.content),
+        contentHash: remoteContentHash,
       };
       result.changed++;
     } else {
