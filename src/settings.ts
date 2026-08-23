@@ -62,6 +62,11 @@ export class GitHubSyncSettingTab extends PluginSettingTab {
             control: { type: "toggle" as const, key: "syncObsidianConfig" },
           },
           {
+            name: "Force GitHub files on Pull",
+            desc: "Replace every synced file with GitHub's version during Pull. Local-only files are not deleted.",
+            control: { type: "toggle" as const, key: "forcePullFromGitHub" },
+          },
+          {
             name: "GitHub credential",
             desc: "Select or create a secret. Only its name is saved in plugin settings.",
             render: (setting: Setting) => {
@@ -89,6 +94,8 @@ export class GitHubSyncSettingTab extends PluginSettingTab {
       this.plugin.settings.pullConcurrency = value;
     } else if (key === "syncObsidianConfig" && typeof value === "boolean") {
       this.plugin.settings.syncObsidianConfig = value;
+    } else if (key === "forcePullFromGitHub" && typeof value === "boolean") {
+      this.plugin.settings.forcePullFromGitHub = value;
     } else if (
       textSettings.some((setting) => setting.key === key) &&
       typeof value === "string"
@@ -135,6 +142,19 @@ export class GitHubSyncSettingTab extends PluginSettingTab {
           .setValue(this.plugin.settings.syncObsidianConfig)
           .onChange(async (value) => {
             this.plugin.settings.syncObsidianConfig = value;
+            await this.plugin.saveSettings();
+          }),
+      );
+    new Setting(containerEl)
+      .setName("Force GitHub files on Pull")
+      .setDesc(
+        "Replace every synced file with GitHub's version during Pull. Local-only files are not deleted.",
+      )
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.forcePullFromGitHub)
+          .onChange(async (value) => {
+            this.plugin.settings.forcePullFromGitHub = value;
             await this.plugin.saveSettings();
           }),
       );

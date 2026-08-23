@@ -221,6 +221,27 @@ describe("GitHub sync integration", () => {
     );
   });
 
+  it("replaces a conflicting local note when forced GitHub Pull is enabled", async () => {
+    const vault = new MemoryVault();
+    const local = vault.add("note.md", "local content");
+    const app = createApp(vault);
+    const settings = createSettings();
+    settings.forcePullFromGitHub = true;
+    const http = new FakeGitHubHttpClient("GitHub content");
+    const service = new SyncService(
+      app,
+      settings,
+      new GitHubApi(app, settings, http),
+    );
+
+    await expect(service.pull()).resolves.toMatchObject({
+      changed: 1,
+      conflicts: [],
+    });
+    expect(await vault.read(local)).toBe("GitHub content");
+    expect(settings.fileState["note.md"]?.sha).toBe("remote-blob-sha");
+  });
+
   it("creates missing parent folders before pulling a nested note", async () => {
     const vault = new MemoryVault();
     const app = createApp(vault);

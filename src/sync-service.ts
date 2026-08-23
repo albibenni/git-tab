@@ -103,6 +103,16 @@ export class SyncService {
     const configPath = normalizedPath.startsWith(
       `${normalizePath(this.app.vault.configDir)}/`,
     );
+    if (this.settings.forcePullFromGitHub) {
+      await this.forcePullNote(
+        path,
+        result,
+        signal,
+        normalizedPath,
+        configPath,
+      );
+      return;
+    }
     if (configPath)
       return this.pullConfigFile(path, entry, result, signal, normalizedPath);
     const local = this.app.vault.getAbstractFileByPath(path);
@@ -166,6 +176,51 @@ export class SyncService {
     } else {
       result.conflicts.push(path);
     }
+  }
+
+  private async forcePullNote(
+    path: string,
+    result: SyncResult,
+    signal: AbortSignal,
+    normalizedPath: string,
+    configPath: boolean,
+  ): Promise<void> {
+    const remoteFile = await this.api.getFile(path);
+    throwIfAborted(signal);
+    const remoteContentHash = await contentHash(remoteFile.content);
+    throwIfAborted(signal);
+    if (configPath) {
+      const exists = await this.app.vault.adapter.exists(normalizedPath);
+      const localContent = exists
+        ? await this.app.vault.adapter.read(normalizedPath)
+        : undefined;
+      throwIfAborted(signal);
+      if (!exists) await this.ensureConfigParentFolders(normalizedPath, signal);
+      if (localContent !== remoteFile.content) {
+        await this.app.vault.adapter.write(normalizedPath, remoteFile.content);
+        throwIfAborted(signal);
+        result.changed++;
+      }
+    } else {
+      const local = this.app.vault.getAbstractFileByPath(path);
+      if (local && !(local instanceof TFile))
+        throw new Error(
+          `Cannot replace ${path}: a folder exists at that path.`,
+        );
+      const localContent = local ? await this.app.vault.read(local) : undefined;
+      throwIfAborted(signal);
+      if (!local) await this.ensureParentFolders(path, signal);
+      if (localContent !== remoteFile.content) {
+        if (local) await this.app.vault.modify(local, remoteFile.content);
+        else await this.app.vault.create(normalizedPath, remoteFile.content);
+        throwIfAborted(signal);
+        result.changed++;
+      }
+    }
+    this.settings.fileState[path] = {
+      sha: remoteFile.sha,
+      contentHash: remoteContentHash,
+    };
   }
 
   private async pullConfigFile(

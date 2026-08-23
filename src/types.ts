@@ -14,6 +14,7 @@ export const storedSettingsSchema = z
     tokenSecretName: z.string(),
     pullConcurrency: z.number().int().min(1).max(12),
     syncObsidianConfig: z.boolean(),
+    forcePullFromGitHub: z.boolean(),
     fileState: z.record(z.string(), fileStateSchema),
   })
   .partial();
@@ -26,6 +27,7 @@ export interface GitHubSyncSettings {
   tokenSecretName: string;
   pullConcurrency: number;
   syncObsidianConfig: boolean;
+  forcePullFromGitHub: boolean;
   lastSyncedCommit?: string;
   fileState: Record<string, z.infer<typeof fileStateSchema>>;
 }
@@ -38,6 +40,7 @@ export const defaultSettings: GitHubSyncSettings = {
   tokenSecretName: "",
   pullConcurrency: 4,
   syncObsidianConfig: true,
+  forcePullFromGitHub: false,
   fileState: {},
 };
 
