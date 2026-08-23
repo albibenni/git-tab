@@ -15,6 +15,7 @@ export const storedSettingsSchema = z
     pullConcurrency: z.number().int().min(1).max(12),
     syncObsidianConfig: z.boolean(),
     forcePullFromGitHub: z.boolean(),
+    lastSyncedCommit: z.string(),
     fileState: z.record(z.string(), fileStateSchema),
   })
   .partial();

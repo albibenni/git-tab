@@ -33,14 +33,36 @@ export class SyncService {
   async pull(): Promise<SyncResult> {
     const controller = new AbortController();
     try {
-      const remote = await withTimeout(
-        this.api.listSyncFiles(),
+      this.onProgress("Fetching repository head…");
+      const head = await withTimeout(
+        this.api.getHead(),
         pullNoteTimeoutMs,
-        "Fetching repository index",
+        "Fetching repository head",
         () => controller.abort(),
       );
       throwIfAborted(controller.signal);
-      this.onProgress(`Comparing ${remote.size} remote note(s)…`);
+      const changed = this.settings.lastSyncedCommit
+        ? await withTimeout(
+            this.api.listChangedSyncFiles(this.settings.lastSyncedCommit, head),
+            pullNoteTimeoutMs,
+            "Comparing repository commits",
+            () => controller.abort(),
+          )
+        : undefined;
+      const remote =
+        changed ??
+        (await withTimeout(
+          this.api.listSyncFiles(head),
+          pullNoteTimeoutMs,
+          "Fetching repository index",
+          () => controller.abort(),
+        ));
+      throwIfAborted(controller.signal);
+      this.onProgress(
+        changed
+          ? `Comparing ${remote.size} changed remote file(s)…`
+          : `Comparing ${remote.size} remote file(s)…`,
+      );
       const result: SyncResult = {
         changed: 0,
         conflicts: [],
@@ -57,7 +79,7 @@ export class SyncService {
               `Pull: checking ${index + 1}/${remote.size} — ${path}`,
             );
             await withTimeout(
-              this.pullNote(path, entry, result, controller.signal),
+              this.pullNote(path, entry, result, controller.signal, head),
               pullNoteTimeoutMs,
               `Pulling ${path}`,
               () => controller.abort(),
@@ -77,13 +99,7 @@ export class SyncService {
       throwIfAborted(controller.signal);
       this.onProgress("Pull: finalizing note checks…");
       if (result.conflicts.length === 0) {
-        this.onProgress("Pull: fetching final branch status…");
-        result.headCommit = await withTimeout(
-          this.api.getHead(),
-          pullNoteTimeoutMs,
-          "Fetching final branch status",
-          () => controller.abort(),
-        );
+        result.headCommit = head;
       }
       return result;
     } catch (error) {
@@ -97,6 +113,7 @@ export class SyncService {
     entry: import("./github-api").RemoteEntry,
     result: SyncResult,
     signal: AbortSignal,
+    ref: string,
   ): Promise<void> {
     throwIfAborted(signal);
     const normalizedPath = normalizePath(path);
@@ -110,14 +127,22 @@ export class SyncService {
         signal,
         normalizedPath,
         configPath,
+        ref,
       );
       return;
     }
     if (configPath)
-      return this.pullConfigFile(path, entry, result, signal, normalizedPath);
+      return this.pullConfigFile(
+        path,
+        entry,
+        result,
+        signal,
+        normalizedPath,
+        ref,
+      );
     const local = this.app.vault.getAbstractFileByPath(path);
     if (!(local instanceof TFile)) {
-      const file = await this.api.getFile(path);
+      const file = await this.api.getFile(path, ref);
       throwIfAborted(signal);
       await this.ensureParentFolders(path, signal);
       throwIfAborted(signal);
@@ -156,7 +181,7 @@ export class SyncService {
       };
       return;
     }
-    const remoteFile = await this.api.getFile(path);
+    const remoteFile = await this.api.getFile(path, ref);
     throwIfAborted(signal);
     if (!known && localContent === remoteFile.content) {
       this.settings.fileState[path] = {
@@ -184,8 +209,9 @@ export class SyncService {
     signal: AbortSignal,
     normalizedPath: string,
     configPath: boolean,
+    ref: string,
   ): Promise<void> {
-    const remoteFile = await this.api.getFile(path);
+    const remoteFile = await this.api.getFile(path, ref);
     throwIfAborted(signal);
     const remoteContentHash = await contentHash(remoteFile.content);
     throwIfAborted(signal);
@@ -229,9 +255,10 @@ export class SyncService {
     result: SyncResult,
     signal: AbortSignal,
     normalizedPath: string,
+    ref: string,
   ): Promise<void> {
     if (!(await this.app.vault.adapter.exists(normalizedPath))) {
-      const file = await this.api.getFile(path);
+      const file = await this.api.getFile(path, ref);
       throwIfAborted(signal);
       await this.ensureConfigParentFolders(normalizedPath, signal);
       throwIfAborted(signal);
@@ -258,7 +285,7 @@ export class SyncService {
       };
       return;
     }
-    const remoteFile = await this.api.getFile(path);
+    const remoteFile = await this.api.getFile(path, ref);
     throwIfAborted(signal);
     if (!known && localContent === remoteFile.content) {
       this.settings.fileState[path] = {

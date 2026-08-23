@@ -1,30 +1,116 @@
 # Git Pad
 
-A mobile-first Obsidian plugin that synchronizes Markdown files and selected Obsidian configuration with a GitHub repository through the GitHub API. It works on iPadOS because it does not rely on native Git, Node.js, Electron, or SSH.
+Git Pad is a mobile-first Obsidian plugin that synchronizes notes with one GitHub repository through the GitHub REST API. It is designed for iPadOS: it does not require native Git, Node.js, Electron, SSH, or a local `.git` directory.
 
-## Current scope
+## What it does
 
-- Pull Markdown files from a repository branch into the vault.
-- Push changed Markdown files as one GitHub commit.
-- Optionally sync selected `.obsidian` settings, snippets, and themes; installed plugins and device-specific files are always excluded.
-- Optional remote subfolder.
-- Detect per-file changes made remotely since the last successful sync and leave conflicts untouched.
+| Capability | Behavior |
+| --- | --- |
+| Pull from GitHub | Downloads changed supported files from the selected branch into the vault. |
+| Commit and push | Creates one Git commit containing local changes, then advances the selected branch. |
+| Fast repeat pulls | Remembers the last successful commit and compares it with the current head, so an unchanged repository avoids a full index and per-note scan. |
+| Safe first pull | Existing local files identical to GitHub are adopted without being rewritten. Different files are preserved as conflicts. |
+| Force GitHub Pull | Optional one-way mode that replaces every synced GitHub file with the remote version. |
+| iPad progress and recovery | Shows the current file and completed progress; network, read, and hash stages time out after 60 seconds with a visible error. |
+| Repository status | The sidebar shows the current head, recent commits, and how many commits are ahead of the local sync baseline. |
 
-It deliberately excludes attachments, deletes, automatic background sync, and conflict merging in this initial release. This makes its behavior conservative on mobile devices.
+## Commands
 
-**First Pull speed** controls concurrent note checks. Keep the default of 4 on older iPads; try 6–8 on a recent iPad only if the initial baseline is slow. Higher values consume more memory and can encounter GitHub rate limits.
+- **Git Pad: Open sidebar** — opens the repository status, Pull, and Commit & Push controls.
+- **Git Pad: Pull Markdown from GitHub** — applies remote changes to the vault.
+- **Git Pad: Push Markdown to GitHub** — creates and pushes one commit containing local changes.
+
+## Files that sync
+
+### Markdown
+
+All Markdown files (`.md`) outside Obsidian’s configuration directory are in scope. An optional **Remote folder** limits syncing to a repository subfolder.
+
+### Obsidian configuration
+
+**Sync Obsidian configuration** is enabled by default. It includes these safe, shareable paths:
+
+- Core settings such as `app.json`, `appearance.json`, `hotkeys.json`, `bookmarks.json`, `graph.json`, `daily-notes.json`, `templates.json`, and other supported core-pane settings.
+- `community-plugins.json` and `core-plugins.json`, so the enabled-plugin list can be shared.
+- CSS snippets in `.obsidian/snippets/`.
+- Theme CSS and theme `manifest.json` files in `.obsidian/themes/`.
+
+The following are never synchronized:
+
+- `.obsidian/plugins/**`, including Git Pad, BRAT, and every other installed plugin.
+- Workspace, cache, and other device-specific configuration files.
+- Attachments, binaries, and non-Markdown vault files.
+
+This means the iPad’s installed plugin code and plugin settings are not overwritten by Pull or included in Push.
+
+## Pull behavior
+
+### First Pull or fallback Pull
+
+Git Pad fetches a recursive GitHub tree and checks each supported remote file. This is used when there is no prior successful sync, after rewritten/diverged Git history, or when GitHub’s commit comparison is too large to trust as a complete file list.
+
+### Incremental Pull
+
+After a successful sync, Git Pad stores the exact GitHub commit SHA. The next Pull compares that SHA with the branch head and checks only files changed on GitHub since that commit.
+
+An unchanged repository requires only a head lookup and commit comparison. The Pull is pinned to one head SHA, so files cannot be read from a mixture of two remote commits if GitHub changes during the operation.
+
+Remote deletions are currently non-destructive: Git Pad leaves a local file in place if it no longer exists on GitHub.
+
+### Conflicts
+
+Git Pad does not overwrite a file when both the local and remote versions may contain changes. It reports a conflict and preserves the local version. Exact conflicting paths are written to Obsidian’s developer console.
+
+A conflict can occur even when you did not consciously edit a note: another plugin may have changed frontmatter or Markdown, line endings may differ, or the local vault may not match the selected repository folder.
+
+### Force GitHub files on Pull
+
+Enable **Force GitHub files on Pull** only when GitHub is the source of truth. The next Pull replaces every synced file that exists on GitHub, records GitHub’s revision as the new baseline, and avoids conflicts for those files.
+
+It does **not** delete local-only files. Disable the setting after recovery if you want normal conflict protection again.
+
+## Push behavior
+
+Push scans supported local files, detects local and remote changes from the saved baseline, then creates one GitHub commit for all safe changes. It does not push if a file needs a Pull first or has a conflict. GitHub branch updates use non-force updates; a concurrent remote change therefore fails safely rather than overwriting another device’s commit.
+
+## Settings
+
+| Setting | Description |
+| --- | --- |
+| Repository owner | GitHub user or organization. |
+| Repository name | GitHub repository name. |
+| Branch | Branch to pull from and push to; normally `main`. |
+| Remote folder | Optional repository subfolder mapped to the vault root. |
+| First Pull speed | Concurrent Pull checks, from 1 to 12. Keep 2–4 on older iPads; use 6–8 only on recent devices. |
+| Sync Obsidian configuration | Includes the supported `.obsidian` settings, snippets, and themes described above. |
+| Force GitHub files on Pull | Replaces synced files with GitHub versions during Pull; local-only files remain. |
+| GitHub credential | A named secret stored in Obsidian SecretStorage. |
 
 ## Clone first, install later
 
-This is supported. Clone or otherwise copy the repository into an Obsidian vault, then install and configure the plugin. On the first pull or push, identical local and GitHub notes are adopted as the sync baseline without being overwritten or committed. If the two copies differ, the plugin reports a conflict and preserves both copies. With **Sync Obsidian configuration** enabled (the default), Git Pad synchronizes selected core settings, snippets, themes, and the `community-plugins.json`/`core-plugins.json` enable lists. All `.obsidian/plugins/` contents—including Git Pad and BRAT—and device-specific/cache files are always excluded.
+This workflow is supported. Copy or clone the repository into an Obsidian vault, then install Git Pad and configure it. On the first Pull or Push, exact local/GitHub matches are adopted as the baseline without rewriting or committing them. Differing files are reported as conflicts instead of being silently replaced.
 
-## Set up
+## Setup
 
-1. Create an empty GitHub repository, or choose a repository whose Markdown folder you want to sync.
-2. Create a fine-grained GitHub personal access token limited to that repository, granting **Contents: Read and write**. This is sufficient for reading trees, creating blobs and commits, and advancing the configured branch. OAuth login with PKCE is planned; its resulting token can be selected here as well.
-3. Install the plugin into your vault's `.obsidian/plugins/git-pad/` folder, then enable it under **Community plugins**.
-4. In the plugin settings, enter the repository owner, name, branch, optional remote folder, and token.
-5. Run **GitHub Sync: Pull Markdown from GitHub** once before editing. Use the pull and push commands from Obsidian's Command palette. When a note needs a pull or has a conflict, resolve it before pushing again.
+1. Create or choose a GitHub repository.
+2. Create a fine-grained personal access token limited to that repository with **Contents: Read and write** permission.
+3. Install and enable Git Pad under **Community plugins**.
+4. Enter the repository owner, name, branch, optional remote folder, and credential in Git Pad settings.
+5. Run **Pull Markdown from GitHub** before editing when GitHub is the source of truth. Use Force GitHub Pull only if you explicitly want the remote copy to win.
+
+## Limits and safety model
+
+- Git Pad is GitHub-only; it does not support arbitrary Git remotes, SSH, branches beyond the configured branch, staging, submodules, or native Git operations.
+- It does not yet synchronize deletions, perform three-way merges, or provide a visual conflict resolver.
+- Sync runs are manual. There is no automatic background pull or push.
+- GitHub requests and local per-file work have a 60-second visible timeout. Obsidian’s mobile HTTP API does not expose request cancellation, so a timed-out native request may finish in the background, but Git Pad stops advancing the sync operation.
+- A recursive GitHub tree that GitHub marks as truncated is rejected rather than synced incompletely. Choose a smaller Remote folder in that case.
+
+## Security and privacy
+
+The selected credential is held by Obsidian SecretStorage; Git Pad saves only its secret name in plugin data. Use a least-privilege, repository-scoped token and revoke it if the device is lost.
+
+Git Pad makes HTTPS requests only to `api.github.com`. It sends supported vault files only to the configured GitHub repository. It has no telemetry, advertising, or backend service.
 
 ## Development
 
@@ -32,25 +118,21 @@ Requires a current Node.js LTS release.
 
 ```bash
 pnpm install
-pnpm run dev
+pnpm test
+pnpm build
+pnpm lint
 ```
 
-Use Obsidian's desktop mobile emulation for early testing, then test on a physical iPad. Build a release with `npm run build`.
+Use Obsidian’s mobile emulation for early testing, then validate on a physical iPad.
 
-## Security
+## Release and BRAT
 
-The selected credential is held by Obsidian SecretStorage; the plugin saves only its secret name in `data.json`. Use a repository-scoped, least-privilege token and revoke it immediately if the device is lost or no longer trusted. Do not commit `data.json`.
+The release workflow publishes `main.js`, `manifest.json`, and `styles.css`. BRAT installs only a published GitHub release, so an iPad does not receive local source changes until a new release is created.
 
-### Network and account disclosure
+From a clean, committed branch:
 
-This plugin makes HTTPS requests only to `api.github.com`. It uses GitHub's Git Database and repository Contents APIs to read Markdown notes, compare their revisions, and create commits in the repository you configure. A GitHub account and a repository-scoped credential are required. The plugin does not include telemetry, advertising, or a backend service, and it does not send vault files anywhere other than the selected GitHub repository.
+```bash
+pnpm run release patch
+```
 
-## OAuth with PKCE
-
-GitHub supports authorization-code OAuth with PKCE. The plugin should generate a high-entropy verifier and `state`, open GitHub's authorization URL with a SHA-256 `code_challenge`, validate the returned `state`, then exchange the code and original verifier for a bearer token. The bearer token works with the GitHub REST API used by this project; it is not an SSH key or native Git credential.
-
-For a production iPad flow, register a GitHub OAuth app with an exact HTTPS callback URL that you control. The callback must return the authorization code to the plugin without ever receiving the verifier. The alternative GitHub Device Flow avoids callback routing but is less seamless. Do not embed an OAuth client secret in the plugin.
-
-## Publishing
-
-The GitHub release workflow creates releases containing `main.js`, `manifest.json`, and `styles.css`. To ship a version, run `pnpm run release patch` (or `minor` / `major`) from a clean, committed branch. The tag must exactly match the `version` in `manifest.json`.
+Use `minor` or `major` instead of `patch` when appropriate. The Git tag must match `manifest.json`.

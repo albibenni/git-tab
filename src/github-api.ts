@@ -38,6 +38,16 @@ const commitsSchema = z.array(
   }),
 );
 const compareSchema = z.object({ ahead_by: z.number() });
+const changedFileSchema = z.object({
+  filename: z.string(),
+  sha: z.string().optional(),
+  status: z.enum(["added", "modified", "removed", "renamed", "copied"]),
+});
+const comparisonSchema = z.object({
+  status: z.enum(["ahead", "behind", "identical", "diverged"]),
+  ahead_by: z.number(),
+  files: z.array(changedFileSchema).optional(),
+});
 export type RemoteEntry = z.infer<typeof treeSchema>["tree"][number];
 const noProgress = (_message: string): void => undefined;
 const requestTimeoutMs = 60_000;
@@ -50,11 +60,13 @@ export class GitHubApi {
     private onProgress: (message: string) => void = noProgress,
   ) {}
 
-  async listSyncFiles(): Promise<Map<string, RemoteEntry>> {
+  async listSyncFiles(
+    ref = this.settings.branch,
+  ): Promise<Map<string, RemoteEntry>> {
     this.onProgress("Fetching repository index…");
     const root = this.root();
     const tree = await this.request(
-      `/git/trees/${encodeURIComponent(this.settings.branch)}?recursive=1`,
+      `/git/trees/${encodeURIComponent(ref)}?recursive=1`,
       treeSchema,
     );
     if (tree.truncated)
@@ -79,10 +91,54 @@ export class GitHubApi {
     return entries;
   }
 
-  async getFile(path: string): Promise<{ sha: string; content: string }> {
+  async listChangedSyncFiles(
+    base: string,
+    head: string,
+  ): Promise<Map<string, RemoteEntry> | undefined> {
+    let comparison: z.infer<typeof comparisonSchema>;
+    try {
+      comparison = await this.request(
+        `/compare/${encodeURIComponent(base)}...${encodeURIComponent(head)}`,
+        comparisonSchema,
+      );
+    } catch (error) {
+      if (error instanceof GitHubResponseError && error.status === 404)
+        return undefined;
+      throw error;
+    }
+    if (
+      comparison.status === "behind" ||
+      comparison.status === "diverged" ||
+      (comparison.ahead_by > 0 &&
+        (!comparison.files || comparison.files.length >= 300))
+    )
+      return undefined;
+    const root = this.root();
+    const entries = new Map<string, RemoteEntry>();
+    for (const file of comparison.files ?? []) {
+      if (file.status === "removed" || !file.sha) continue;
+      if (root && !file.filename.startsWith(`${root}/`)) continue;
+      const path = root ? file.filename.slice(root.length + 1) : file.filename;
+      if (
+        !isSyncableVaultPath(
+          path,
+          this.app.vault.configDir,
+          this.settings.syncObsidianConfig,
+        )
+      )
+        continue;
+      entries.set(path, { path: file.filename, sha: file.sha, type: "blob" });
+    }
+    return entries;
+  }
+
+  async getFile(
+    path: string,
+    ref = this.settings.branch,
+  ): Promise<{ sha: string; content: string }> {
     this.onProgress(`Fetching ${path}…`);
     const result = await this.request(
-      `/contents/${remotePath(this.root(), path)}?ref=${encodeURIComponent(this.settings.branch)}`,
+      `/contents/${remotePath(this.root(), path)}?ref=${encodeURIComponent(ref)}`,
       fileSchema,
     );
     return {
@@ -226,7 +282,7 @@ export class GitHubApi {
         throw new Error(
           "GitHub repository, branch, or token permission was not found.",
         );
-      throw new Error(`GitHub returned ${response.status}: ${detail}`);
+      throw new GitHubResponseError(response.status, detail);
     }
     const parsed = schema.safeParse(response.json);
     if (!parsed.success)
@@ -234,5 +290,14 @@ export class GitHubApi {
         `GitHub returned an invalid response: ${parsed.error.issues[0]?.message ?? "schema error"}`,
       );
     return parsed.data;
+  }
+}
+
+class GitHubResponseError extends Error {
+  constructor(
+    readonly status: number,
+    detail: string,
+  ) {
+    super(`GitHub returned ${status}: ${detail}`);
   }
 }

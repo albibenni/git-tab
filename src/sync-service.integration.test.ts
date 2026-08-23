@@ -92,6 +92,8 @@ class FakeGitHubHttpClient implements HttpClient {
     private remoteContent: string,
     private remoteSha = "remote-blob-sha",
     private remotePath = "note.md",
+    private head = "commit-old",
+    private comparison?: unknown,
   ) {}
 
   request(request: HttpRequest): Promise<HttpResponse> {
@@ -101,7 +103,7 @@ class FakeGitHubHttpClient implements HttpClient {
     const response = (json: unknown, status = 200) =>
       ({ status, json, text: JSON.stringify(json) }) as HttpResponse;
 
-    if (path === "/git/trees/main") {
+    if (path.startsWith("/git/trees/")) {
       return Promise.resolve(
         response({
           tree: [{ path: this.remotePath, sha: this.remoteSha, type: "blob" }],
@@ -121,8 +123,18 @@ class FakeGitHubHttpClient implements HttpClient {
     if (path === "/git/ref/heads/main" || path === "/git/refs/heads/main") {
       if (request.method === "PATCH")
         return Promise.resolve(response({ object: { sha: "commit-new" } }));
-      return Promise.resolve(response({ object: { sha: "commit-old" } }));
+      return Promise.resolve(response({ object: { sha: this.head } }));
     }
+    if (path.startsWith("/compare/"))
+      return Promise.resolve(
+        response(
+          this.comparison ?? {
+            status: "identical",
+            ahead_by: 0,
+            files: [],
+          },
+        ),
+      );
     if (path === "/git/commits/commit-old") {
       return Promise.resolve(response({ tree: { sha: "tree-old" } }));
     }
@@ -173,7 +185,7 @@ describe("GitHub sync integration", () => {
     expect(
       await vault.read(vault.getAbstractFileByPath("note.md") as TFile),
     ).toBe("clone content");
-    expect(progress).toContain("Comparing 1 remote note(s)…");
+    expect(progress).toContain("Comparing 1 remote file(s)…");
     expect(progress).toContain("Pull: checking 1/1 — note.md");
   });
 
@@ -219,6 +231,125 @@ describe("GitHub sync integration", () => {
         "Updating the repository branch…",
       ]),
     );
+  });
+
+  it("skips the repository tree and note checks when the saved commit is current", async () => {
+    const vault = new MemoryVault();
+    vault.add("note.md", "clone content");
+    const app = createApp(vault);
+    const settings = createSettings();
+    settings.lastSyncedCommit = "commit-old";
+    const http = new FakeGitHubHttpClient("clone content");
+    const progress: string[] = [];
+    const service = new SyncService(
+      app,
+      settings,
+      new GitHubApi(app, settings, http),
+      (status) => progress.push(status),
+    );
+
+    await expect(service.pull()).resolves.toMatchObject({
+      changed: 0,
+      conflicts: [],
+      headCommit: "commit-old",
+    });
+    expect(http.requests).toEqual([
+      "GET /git/ref/heads/main",
+      "GET /compare/commit-old...commit-old",
+    ]);
+    expect(progress).toContain("Comparing 0 changed remote file(s)…");
+  });
+
+  it("pulls only files reported as changed since the saved commit", async () => {
+    const vault = new MemoryVault();
+    const local = vault.add("note.md", "original content");
+    const app = createApp(vault);
+    const settings = createSettings();
+    settings.lastSyncedCommit = "commit-old";
+    settings.fileState["note.md"] = {
+      sha: "old-blob-sha",
+      contentHash: await contentHash("original content"),
+    };
+    const http = new FakeGitHubHttpClient(
+      "updated content",
+      "new-blob-sha",
+      "note.md",
+      "commit-new",
+      {
+        status: "ahead",
+        ahead_by: 1,
+        files: [
+          { filename: "note.md", sha: "new-blob-sha", status: "modified" },
+        ],
+      },
+    );
+    const service = new SyncService(
+      app,
+      settings,
+      new GitHubApi(app, settings, http),
+    );
+
+    await expect(service.pull()).resolves.toMatchObject({
+      changed: 1,
+      conflicts: [],
+      headCommit: "commit-new",
+    });
+    expect(await vault.read(local)).toBe("updated content");
+    expect(http.requests).not.toContain(
+      "GET /git/trees/commit-new?recursive=1",
+    );
+  });
+
+  it("falls back to the pinned full tree after rewritten history", async () => {
+    const vault = new MemoryVault();
+    const app = createApp(vault);
+    const settings = createSettings();
+    settings.lastSyncedCommit = "missing-commit";
+    const http = new FakeGitHubHttpClient(
+      "remote content",
+      "remote-blob-sha",
+      "note.md",
+      "commit-new",
+      { status: "diverged", ahead_by: 1, files: [] },
+    );
+    const service = new SyncService(
+      app,
+      settings,
+      new GitHubApi(app, settings, http),
+    );
+
+    await expect(service.pull()).resolves.toMatchObject({
+      changed: 1,
+      headCommit: "commit-new",
+    });
+    expect(http.requests).toContain("GET /git/trees/commit-new?recursive=1");
+  });
+
+  it("falls back to the pinned full tree when comparison files are capped", async () => {
+    const vault = new MemoryVault();
+    const app = createApp(vault);
+    const settings = createSettings();
+    settings.lastSyncedCommit = "commit-old";
+    const comparisonFiles = Array.from({ length: 300 }, (_, index) => ({
+      filename: `note-${index}.md`,
+      sha: `blob-${index}`,
+      status: "modified" as const,
+    }));
+    const http = new FakeGitHubHttpClient(
+      "remote content",
+      "remote-blob-sha",
+      "note.md",
+      "commit-new",
+      { status: "ahead", ahead_by: 300, files: comparisonFiles },
+    );
+    const service = new SyncService(
+      app,
+      settings,
+      new GitHubApi(app, settings, http),
+    );
+
+    await expect(service.pull()).resolves.toMatchObject({ changed: 1 });
+    expect(http.requests).toContain("GET /git/trees/commit-new?recursive=1");
   });
 
   it("replaces a conflicting local note when forced GitHub Pull is enabled", async () => {

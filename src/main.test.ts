@@ -1,3 +1,4 @@
+import { storedSettingsSchema } from "./types";
 import {
   decodeBase64,
   encodeBase64,
@@ -27,6 +28,13 @@ describe("encoding helpers", () => {
   it("formats non-Error failures without hiding their value", () => {
     expect(message("rate limited")).toBe("rate limited");
     expect(message({ status: 403 })).toBe("[object Object]");
+  });
+
+  it("retains the successful sync commit when loading saved settings", () => {
+    const parsed = storedSettingsSchema.parse({
+      lastSyncedCommit: "abc123",
+    });
+    expect(parsed.lastSyncedCommit).toBe("abc123");
   });
 
   it("fails operations that do not settle before their timeout", async () => {
