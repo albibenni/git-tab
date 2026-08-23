@@ -17,7 +17,11 @@ const textSettings: Array<{ key: TextSettingKey; name: string; desc: string }> =
       name: "Repository owner",
       desc: "GitHub user or organization.",
     },
-    { key: "repo", name: "Repository name", desc: "For example: notes." },
+    {
+      key: "repo",
+      name: "Repository name",
+      desc: "Enter only the repository part. For username/repository_name, enter repository_name here; put username in Repository owner.",
+    },
     { key: "branch", name: "Branch", desc: "Usually main." },
     {
       key: "vaultFolder",
