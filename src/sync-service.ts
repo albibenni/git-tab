@@ -1,9 +1,15 @@
 import { App, normalizePath, TFile } from "obsidian";
 import { GitHubApi } from "./github-api";
 import type { GitHubSyncSettings, SyncResult } from "./types";
-import { contentHash, gitBlobSha, mapConcurrent } from "./utils";
+import { contentHash, gitBlobSha, mapConcurrent, withTimeout } from "./utils";
 
 const noProgress = (_message: string): void => undefined;
+const pullNoteTimeoutMs = 60_000;
+
+function throwIfAborted(signal: AbortSignal): void {
+  if (signal.aborted)
+    throw new Error("Pull cancelled after an earlier operation failed.");
+}
 
 export class SyncService {
   private api: GitHubApi;
@@ -18,70 +24,124 @@ export class SyncService {
   }
 
   async pull(): Promise<SyncResult> {
-    const remote = await this.api.listMarkdownFiles();
-    this.onProgress(`Comparing ${remote.size} remote note(s)…`);
-    const result: SyncResult = { changed: 0, conflicts: [], requiresPull: [] };
-    await mapConcurrent(
-      [...remote.entries()],
-      this.settings.pullConcurrency,
-      async ([path, entry], index) => {
-        this.onProgress(`Pull: checking ${index + 1}/${remote.size}…`);
-        const local = this.app.vault.getAbstractFileByPath(path);
-        if (!(local instanceof TFile)) {
-          const file = await this.api.getFile(path);
-          await this.app.vault.create(normalizePath(path), file.content);
-          this.settings.fileState[path] = {
-            sha: file.sha,
-            contentHash: await contentHash(file.content),
-          };
-          result.changed++;
-          return;
-        }
-        const localContent = await this.app.vault.read(local);
-        const localHash = await contentHash(localContent);
-        const known = this.settings.fileState[path];
-        if (known?.sha === entry.sha) {
-          this.settings.fileState[path] = {
-            sha: entry.sha,
-            contentHash: known.contentHash ?? localHash,
-          };
-          return;
-        }
-        if (
-          !known &&
-          entry.sha.length === 40 &&
-          (await gitBlobSha(localContent)) === entry.sha
-        ) {
-          this.settings.fileState[path] = {
-            sha: entry.sha,
-            contentHash: localHash,
-          };
-          return;
-        }
-        const remoteFile = await this.api.getFile(path);
-        if (!known && localContent === remoteFile.content) {
-          this.settings.fileState[path] = {
-            sha: remoteFile.sha,
-            contentHash: localHash,
-          };
-        } else if (known?.contentHash && known.contentHash === localHash) {
-          await this.app.vault.modify(local, remoteFile.content);
-          this.settings.fileState[path] = {
-            sha: remoteFile.sha,
-            contentHash: await contentHash(remoteFile.content),
-          };
-          result.changed++;
-        } else {
-          result.conflicts.push(path);
-        }
-      },
-    );
-    this.onProgress("Pull: finalizing note checks…");
-    if (result.conflicts.length === 0) {
-      this.onProgress("Pull: fetching final branch status…");
-      result.headCommit = await this.api.getHead();
+    const controller = new AbortController();
+    try {
+      const remote = await withTimeout(
+        this.api.listMarkdownFiles(),
+        pullNoteTimeoutMs,
+        "Fetching repository index",
+        () => controller.abort(),
+      );
+      throwIfAborted(controller.signal);
+      this.onProgress(`Comparing ${remote.size} remote note(s)…`);
+      const result: SyncResult = {
+        changed: 0,
+        conflicts: [],
+        requiresPull: [],
+      };
+      await mapConcurrent(
+        [...remote.entries()],
+        this.settings.pullConcurrency,
+        async ([path, entry], index) => {
+          try {
+            throwIfAborted(controller.signal);
+            this.onProgress(
+              `Pull: checking ${index + 1}/${remote.size} — ${path}`,
+            );
+            await withTimeout(
+              this.pullNote(path, entry, result, controller.signal),
+              pullNoteTimeoutMs,
+              `Pulling ${path}`,
+              () => controller.abort(),
+            );
+            throwIfAborted(controller.signal);
+          } catch (error) {
+            controller.abort();
+            throw error;
+          }
+        },
+        () => controller.signal.aborted,
+      );
+      throwIfAborted(controller.signal);
+      this.onProgress("Pull: finalizing note checks…");
+      if (result.conflicts.length === 0) {
+        this.onProgress("Pull: fetching final branch status…");
+        result.headCommit = await withTimeout(
+          this.api.getHead(),
+          pullNoteTimeoutMs,
+          "Fetching final branch status",
+          () => controller.abort(),
+        );
+      }
+      return result;
+    } catch (error) {
+      controller.abort();
+      throw error;
     }
-    return result;
+  }
+
+  private async pullNote(
+    path: string,
+    entry: import("./github-api").RemoteEntry,
+    result: SyncResult,
+    signal: AbortSignal,
+  ): Promise<void> {
+    throwIfAborted(signal);
+    const local = this.app.vault.getAbstractFileByPath(path);
+    if (!(local instanceof TFile)) {
+      const file = await this.api.getFile(path);
+      throwIfAborted(signal);
+      await this.app.vault.create(normalizePath(path), file.content);
+      throwIfAborted(signal);
+      this.settings.fileState[path] = {
+        sha: file.sha,
+        contentHash: await contentHash(file.content),
+      };
+      result.changed++;
+      return;
+    }
+    const localContent = await this.app.vault.read(local);
+    throwIfAborted(signal);
+    const localHash = await contentHash(localContent);
+    throwIfAborted(signal);
+    const known = this.settings.fileState[path];
+    if (known?.sha === entry.sha) {
+      this.settings.fileState[path] = {
+        sha: entry.sha,
+        contentHash: known.contentHash ?? localHash,
+      };
+      return;
+    }
+    if (
+      !known &&
+      entry.sha.length === 40 &&
+      (await gitBlobSha(localContent)) === entry.sha
+    ) {
+      throwIfAborted(signal);
+      this.settings.fileState[path] = {
+        sha: entry.sha,
+        contentHash: localHash,
+      };
+      return;
+    }
+    const remoteFile = await this.api.getFile(path);
+    throwIfAborted(signal);
+    if (!known && localContent === remoteFile.content) {
+      this.settings.fileState[path] = {
+        sha: remoteFile.sha,
+        contentHash: localHash,
+      };
+    } else if (known?.contentHash && known.contentHash === localHash) {
+      await this.app.vault.modify(local, remoteFile.content);
+      throwIfAborted(signal);
+      this.settings.fileState[path] = {
+        sha: remoteFile.sha,
+        contentHash: await contentHash(remoteFile.content),
+      };
+      result.changed++;
+    } else {
+      result.conflicts.push(path);
+    }
   }
 
   async push(): Promise<SyncResult> {

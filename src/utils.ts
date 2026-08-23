@@ -18,6 +18,30 @@ export function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+export async function withTimeout<T>(
+  operation: Promise<T>,
+  timeoutMs: number,
+  description: string,
+  onTimeout?: () => void,
+): Promise<T> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      operation,
+      new Promise<never>((_, reject) => {
+        timeout = setTimeout(() => {
+          onTimeout?.();
+          reject(
+            new Error(`${description} timed out after ${timeoutMs / 1000}s.`),
+          );
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeout !== undefined) clearTimeout(timeout);
+  }
+}
+
 export async function contentHash(value: string): Promise<string> {
   const digest = await crypto.subtle.digest(
     "SHA-256",
@@ -52,10 +76,12 @@ export async function mapConcurrent<T>(
   values: readonly T[],
   limit: number,
   map: (value: T, index: number) => Promise<void>,
+  shouldStop?: () => boolean,
 ): Promise<void> {
   let cursor = 0;
   const worker = async (): Promise<void> => {
     while (cursor < values.length) {
+      if (shouldStop?.()) return;
       const index = cursor++;
       await map(values[index] as T, index);
     }

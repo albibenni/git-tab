@@ -130,7 +130,7 @@ describe("GitHub sync integration", () => {
       await vault.read(vault.getAbstractFileByPath("note.md") as TFile),
     ).toBe("clone content");
     expect(progress).toContain("Comparing 1 remote note(s)…");
-    expect(progress).toContain("Pull: checking 1/1…");
+    expect(progress).toContain("Pull: checking 1/1 — note.md");
   });
 
   it("creates one GitHub commit for changed notes", async () => {

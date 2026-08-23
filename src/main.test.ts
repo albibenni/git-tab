@@ -5,6 +5,7 @@ import {
   mapConcurrent,
   message,
   remotePath,
+  withTimeout,
 } from "./utils";
 
 describe("encoding helpers", () => {
@@ -27,6 +28,21 @@ describe("encoding helpers", () => {
     expect(message({ status: 403 })).toBe("[object Object]");
   });
 
+  it("fails operations that do not settle before their timeout", async () => {
+    let timedOut = false;
+    await expect(
+      withTimeout(
+        new Promise<never>(() => undefined),
+        1,
+        "Pulling note.md",
+        () => {
+          timedOut = true;
+        },
+      ),
+    ).rejects.toThrow("Pulling note.md timed out after 0.001s.");
+    expect(timedOut).toBe(true);
+  });
+
   it("encodes each remote path segment", () => {
     expect(remotePath("My Notes/archive", "Daily/one & two.md")).toBe(
       "My%20Notes/archive/Daily/one%20%26%20two.md",
@@ -43,6 +59,22 @@ describe("encoding helpers", () => {
       active--;
     });
     expect(peak).toBeLessThanOrEqual(2);
+  });
+
+  it("does not start more work after cancellation", async () => {
+    let cancelled = false;
+    const processed: number[] = [];
+    await mapConcurrent(
+      [1, 2, 3],
+      1,
+      (value) => {
+        processed.push(value);
+        cancelled = true;
+        return Promise.resolve();
+      },
+      () => cancelled,
+    );
+    expect(processed).toEqual([1]);
   });
 
   it("matches GitHub blob SHAs without requesting file content", async () => {
