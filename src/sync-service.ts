@@ -168,10 +168,12 @@ export class SyncService {
   ): Promise<void> {
     const parts = normalizePath(path).split("/");
     parts.pop();
+    const configDir = normalizePath(this.app.vault.configDir);
     let folder = "";
     for (const part of parts) {
       folder = folder ? `${folder}/${part}` : part;
       throwIfAborted(signal);
+      if (folder === configDir) continue;
       if (this.app.vault.getAbstractFileByPath(folder)) continue;
       let creation = this.folderCreations.get(folder);
       if (!creation) {

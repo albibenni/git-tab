@@ -24,7 +24,7 @@ class MemoryVault {
 
   create(path: string, content: string): Promise<TFile> {
     const parent = path.split("/").slice(0, -1).join("/");
-    if (parent && !this.folders.has(parent))
+    if (parent && parent !== this.configDir && !this.folders.has(parent))
       return Promise.reject(new Error("Parent folder doesn't exist"));
     return Promise.resolve(this.add(path, content));
   }
@@ -243,5 +243,6 @@ describe("GitHub sync integration", () => {
         vault.getAbstractFileByPath(".obsidian/app.json") as TFile,
       ),
     ).toBe('{"showLineNumber":true}');
+    expect(vault.folders.has(".obsidian")).toBe(false);
   });
 });

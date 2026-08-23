@@ -13,15 +13,11 @@ import { message } from "./utils";
 export default class GitHubSyncMobilePlugin extends Plugin {
   settings: GitHubSyncSettings = { ...defaultSettings };
   syncStatus = "Idle";
-  private sidebar: GitPadSidebar | null = null;
   private syncing = false;
   async onload(): Promise<void> {
     await this.loadSettings();
     this.addSettingTab(new GitHubSyncSettingTab(this.app, this));
-    this.registerView(GIT_PAD_VIEW, (leaf) => {
-      this.sidebar = new GitPadSidebar(leaf, this);
-      return this.sidebar;
-    });
+    this.registerView(GIT_PAD_VIEW, (leaf) => new GitPadSidebar(leaf, this));
     this.addRibbonIcon("git-branch", "Open Git Pad sidebar", () => {
       void this.openSidebar();
     });
@@ -127,7 +123,9 @@ export default class GitHubSyncMobilePlugin extends Plugin {
   }
   private setSyncStatus(status: string): void {
     this.syncStatus = status;
-    this.sidebar?.updateProgress(status);
+    for (const leaf of this.app.workspace.getLeavesOfType(GIT_PAD_VIEW)) {
+      if (leaf.view instanceof GitPadSidebar) leaf.view.updateProgress(status);
+    }
   }
   async fetchStatus(): Promise<import("./types").GitStatus> {
     if (!this.configured())
@@ -162,6 +160,6 @@ export default class GitHubSyncMobilePlugin extends Plugin {
       return;
     }
     await leaf.setViewState({ type: GIT_PAD_VIEW, active: true });
-    this.app.workspace.revealLeaf(leaf);
+    await this.app.workspace.revealLeaf(leaf);
   }
 }

@@ -103,7 +103,7 @@ export class GitHubSyncSettingTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
     new Setting(containerEl)
-      .setName("Git Pad")
+      .setName("Repository sync")
       .setDesc(
         "A clone can be installed and configured later: identical notes are adopted without being rewritten.",
       )
