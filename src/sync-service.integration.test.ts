@@ -8,6 +8,7 @@ import { contentHash, encodeBase64 } from "./utils";
 
 class MemoryVault {
   readonly files = new Map<string, { file: TFile; content: string }>();
+  readonly folders = new Map<string, TFile>();
 
   add(path: string, content: string): TFile {
     const file = new TFile();
@@ -17,11 +18,24 @@ class MemoryVault {
   }
 
   getAbstractFileByPath(path: string): TFile | null {
-    return this.files.get(path)?.file ?? null;
+    return this.files.get(path)?.file ?? this.folders.get(path) ?? null;
   }
 
   create(path: string, content: string): Promise<TFile> {
+    const parent = path.split("/").slice(0, -1).join("/");
+    if (parent && !this.folders.has(parent))
+      return Promise.reject(new Error("Parent folder doesn't exist"));
     return Promise.resolve(this.add(path, content));
+  }
+
+  createFolder(path: string): Promise<TFile> {
+    const parent = path.split("/").slice(0, -1).join("/");
+    if (parent && !this.folders.has(parent))
+      return Promise.reject(new Error("Parent folder doesn't exist"));
+    const folder = new TFile();
+    folder.path = path;
+    this.folders.set(path, folder);
+    return Promise.resolve(folder);
   }
 
   modify(file: TFile, content: string): Promise<void> {
@@ -48,6 +62,7 @@ class FakeGitHubHttpClient implements HttpClient {
   constructor(
     private remoteContent: string,
     private remoteSha = "remote-blob-sha",
+    private remotePath = "note.md",
   ) {}
 
   request(request: HttpRequest): Promise<HttpResponse> {
@@ -60,12 +75,12 @@ class FakeGitHubHttpClient implements HttpClient {
     if (path === "/git/trees/main") {
       return Promise.resolve(
         response({
-          tree: [{ path: "note.md", sha: this.remoteSha, type: "blob" }],
+          tree: [{ path: this.remotePath, sha: this.remoteSha, type: "blob" }],
           truncated: false,
         }),
       );
     }
-    if (path === "/contents/note.md") {
+    if (path === `/contents/${this.remotePath}`) {
       return Promise.resolve(
         response({
           sha: this.remoteSha,
@@ -175,5 +190,30 @@ describe("GitHub sync integration", () => {
         "Updating the repository branch…",
       ]),
     );
+  });
+
+  it("creates missing parent folders before pulling a nested note", async () => {
+    const vault = new MemoryVault();
+    const app = createApp(vault);
+    const settings = createSettings();
+    const http = new FakeGitHubHttpClient(
+      "nested content",
+      "remote-blob-sha",
+      "Inbox/2026/note.md",
+    );
+    const service = new SyncService(
+      app,
+      settings,
+      new GitHubApi(app, settings, http),
+    );
+
+    await expect(service.pull()).resolves.toMatchObject({ changed: 1 });
+    expect(vault.folders.has("Inbox")).toBe(true);
+    expect(vault.folders.has("Inbox/2026")).toBe(true);
+    expect(
+      await vault.read(
+        vault.getAbstractFileByPath("Inbox/2026/note.md") as TFile,
+      ),
+    ).toBe("nested content");
   });
 });

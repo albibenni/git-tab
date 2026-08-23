@@ -13,6 +13,7 @@ function throwIfAborted(signal: AbortSignal): void {
 
 export class SyncService {
   private api: GitHubApi;
+  private folderCreations = new Map<string, Promise<void>>();
 
   constructor(
     private app: App,
@@ -91,6 +92,8 @@ export class SyncService {
     if (!(local instanceof TFile)) {
       const file = await this.api.getFile(path);
       throwIfAborted(signal);
+      await this.ensureParentFolders(path, signal);
+      throwIfAborted(signal);
       await this.app.vault.create(normalizePath(path), file.content);
       throwIfAborted(signal);
       const fileContentHash = await contentHash(file.content);
@@ -145,6 +148,33 @@ export class SyncService {
       result.changed++;
     } else {
       result.conflicts.push(path);
+    }
+  }
+
+  private async ensureParentFolders(
+    path: string,
+    signal: AbortSignal,
+  ): Promise<void> {
+    const parts = normalizePath(path).split("/");
+    parts.pop();
+    let folder = "";
+    for (const part of parts) {
+      folder = folder ? `${folder}/${part}` : part;
+      throwIfAborted(signal);
+      if (this.app.vault.getAbstractFileByPath(folder)) continue;
+      let creation = this.folderCreations.get(folder);
+      if (!creation) {
+        creation = this.app.vault
+          .createFolder(folder)
+          .then(() => undefined)
+          .catch((error: unknown) => {
+            if (this.app.vault.getAbstractFileByPath(folder)) return;
+            throw error;
+          });
+        this.folderCreations.set(folder, creation);
+      }
+      await creation;
+      throwIfAborted(signal);
     }
   }
 
