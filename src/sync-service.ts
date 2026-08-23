@@ -99,6 +99,12 @@ export class SyncService {
     signal: AbortSignal,
   ): Promise<void> {
     throwIfAborted(signal);
+    const normalizedPath = normalizePath(path);
+    const configPath = normalizedPath.startsWith(
+      `${normalizePath(this.app.vault.configDir)}/`,
+    );
+    if (configPath)
+      return this.pullConfigFile(path, entry, result, signal, normalizedPath);
     const local = this.app.vault.getAbstractFileByPath(path);
     if (!(local instanceof TFile)) {
       const file = await this.api.getFile(path);
@@ -162,6 +168,63 @@ export class SyncService {
     }
   }
 
+  private async pullConfigFile(
+    path: string,
+    entry: import("./github-api").RemoteEntry,
+    result: SyncResult,
+    signal: AbortSignal,
+    normalizedPath: string,
+  ): Promise<void> {
+    if (!(await this.app.vault.adapter.exists(normalizedPath))) {
+      const file = await this.api.getFile(path);
+      throwIfAborted(signal);
+      await this.ensureConfigParentFolders(normalizedPath, signal);
+      throwIfAborted(signal);
+      await this.app.vault.adapter.write(normalizedPath, file.content);
+      throwIfAborted(signal);
+      const fileContentHash = await contentHash(file.content);
+      throwIfAborted(signal);
+      this.settings.fileState[path] = {
+        sha: file.sha,
+        contentHash: fileContentHash,
+      };
+      result.changed++;
+      return;
+    }
+    const localContent = await this.app.vault.adapter.read(normalizedPath);
+    throwIfAborted(signal);
+    const localHash = await contentHash(localContent);
+    throwIfAborted(signal);
+    const known = this.settings.fileState[path];
+    if (known?.sha === entry.sha) {
+      this.settings.fileState[path] = {
+        sha: entry.sha,
+        contentHash: known.contentHash ?? localHash,
+      };
+      return;
+    }
+    const remoteFile = await this.api.getFile(path);
+    throwIfAborted(signal);
+    if (!known && localContent === remoteFile.content) {
+      this.settings.fileState[path] = {
+        sha: remoteFile.sha,
+        contentHash: localHash,
+      };
+    } else if (known?.contentHash && known.contentHash === localHash) {
+      await this.app.vault.adapter.write(normalizedPath, remoteFile.content);
+      throwIfAborted(signal);
+      const remoteContentHash = await contentHash(remoteFile.content);
+      throwIfAborted(signal);
+      this.settings.fileState[path] = {
+        sha: remoteFile.sha,
+        contentHash: remoteContentHash,
+      };
+      result.changed++;
+    } else {
+      result.conflicts.push(path);
+    }
+  }
+
   private async ensureParentFolders(
     path: string,
     signal: AbortSignal,
@@ -187,6 +250,22 @@ export class SyncService {
         this.folderCreations.set(folder, creation);
       }
       await creation;
+      throwIfAborted(signal);
+    }
+  }
+
+  private async ensureConfigParentFolders(
+    path: string,
+    signal: AbortSignal,
+  ): Promise<void> {
+    const parts = path.split("/");
+    parts.pop();
+    let folder = "";
+    for (const part of parts) {
+      folder = folder ? `${folder}/${part}` : part;
+      throwIfAborted(signal);
+      if (await this.app.vault.adapter.exists(folder)) continue;
+      await this.app.vault.adapter.mkdir(folder);
       throwIfAborted(signal);
     }
   }

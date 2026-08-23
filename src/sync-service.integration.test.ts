@@ -10,6 +10,30 @@ class MemoryVault {
   readonly files = new Map<string, { file: TFile; content: string }>();
   readonly folders = new Map<string, TFile>();
   readonly configDir = ".obsidian";
+  readonly adapter = {
+    exists: async (path: string): Promise<boolean> =>
+      path === this.configDir || this.files.has(path) || this.folders.has(path),
+    read: (path: string): Promise<string> => {
+      const entry = this.files.get(path);
+      return entry
+        ? Promise.resolve(entry.content)
+        : Promise.reject(new Error(`Missing file: ${path}`));
+    },
+    write: (path: string, content: string): Promise<void> => {
+      const entry = this.files.get(path);
+      if (entry) entry.content = content;
+      else this.add(path, content);
+      return Promise.resolve();
+    },
+    mkdir: (path: string): Promise<void> => {
+      if (path === this.configDir || this.folders.has(path))
+        return Promise.resolve();
+      const folder = new TFile();
+      folder.path = path;
+      this.folders.set(path, folder);
+      return Promise.resolve();
+    },
+  };
 
   add(path: string, content: string): TFile {
     const file = new TFile();
