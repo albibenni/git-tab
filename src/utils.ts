@@ -25,6 +25,12 @@ export function encodeBase64(value: string): string {
 export function decodeBase64(value: string): string {
   return new TextDecoder().decode(binaryStringToBytes(atob(value)));
 }
+export function decodeBase64Bytes(value: string): ArrayBuffer {
+  const bytes = binaryStringToBytes(atob(value));
+  const buffer = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(buffer).set(bytes);
+  return buffer;
+}
 
 function bytesToBinaryString(bytes: Uint8Array): string {
   let result = "";

@@ -8,6 +8,7 @@ Git Pad is a mobile-first Obsidian plugin that synchronizes notes with one GitHu
 | --- | --- |
 | Pull from GitHub | Downloads changed supported files from the selected branch into the vault. |
 | Commit and push | Creates one Git commit containing local changes, then advances the selected branch. |
+| Clone into a blank vault | Copies every tracked repository file, including attachments and `.obsidian`, into an empty vault. |
 | Fast repeat pulls | Remembers the last successful commit and compares it with the current head, so an unchanged repository avoids a full index and per-note scan. |
 | Safe first pull | Existing local files identical to GitHub are adopted without being rewritten. Different files are preserved as conflicts. |
 | Force GitHub Pull | Optional one-way mode that replaces every synced GitHub file with the remote version. |
@@ -17,6 +18,7 @@ Git Pad is a mobile-first Obsidian plugin that synchronizes notes with one GitHu
 ## Commands
 
 - **Git Pad: Open sidebar** — opens the repository status, Pull, and Commit & Push controls.
+- **Git Pad: Clone repository into this blank vault** — copies the complete configured repository into an empty vault.
 - **Git Pad: Pull Markdown from GitHub** — applies remote changes to the vault.
 - **Git Pad: Push Markdown to GitHub** — creates and pushes one commit containing local changes.
 
@@ -68,6 +70,18 @@ A conflict can occur even when you did not consciously edit a note: another plug
 Enable **Force GitHub files on Pull** only when GitHub is the source of truth. The next Pull replaces every synced file that exists on GitHub, records GitHub’s revision as the new baseline, and avoids conflicts for those files.
 
 It does **not** delete local-only files. Disable the setting after recovery if you want normal conflict protection again.
+
+## Clone a repository into a blank vault
+
+Use **Clone repository into this blank vault** when creating a new vault from GitHub. It uses the configured owner, repository, and branch, then copies every tracked blob at one pinned commit:
+
+- Markdown, attachments, and other binary files are copied.
+- `.obsidian` is copied, including themes, snippets, and plugin folders such as BRAT and Git Pad.
+- The configured **Remote folder** must be empty because Clone always copies the complete repository root.
+- The vault must contain no files outside `.obsidian`; this protects an existing vault from accidental overwrite.
+- Existing `.obsidian` files may be replaced. If the repository includes Git Pad itself, reload Obsidian after Clone to activate the cloned plugin files.
+
+Clone saves the cloned commit as the sync baseline. Later Pull and Push operations retain their normal selective-file behavior; they do not begin syncing attachments or plugin files just because Clone initially copied them.
 
 ## Push behavior
 

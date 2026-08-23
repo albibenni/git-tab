@@ -25,6 +25,10 @@ class MemoryVault {
       else this.add(path, content);
       return Promise.resolve();
     },
+    writeBinary: (path: string, content: ArrayBuffer): Promise<void> => {
+      this.add(path, new TextDecoder().decode(content));
+      return Promise.resolve();
+    },
     mkdir: (path: string): Promise<void> => {
       if (path === this.configDir || this.folders.has(path))
         return Promise.resolve();
@@ -51,6 +55,10 @@ class MemoryVault {
     if (parent && parent !== this.configDir && !this.folders.has(parent))
       return Promise.reject(new Error("Parent folder doesn't exist"));
     return Promise.resolve(this.add(path, content));
+  }
+
+  createBinary(path: string, content: ArrayBuffer): Promise<TFile> {
+    return Promise.resolve(this.add(path, new TextDecoder().decode(content)));
   }
 
   createFolder(path: string): Promise<TFile> {
@@ -94,6 +102,12 @@ class FakeGitHubHttpClient implements HttpClient {
     private remotePath = "note.md",
     private head = "commit-old",
     private comparison?: unknown,
+    private repositoryEntries?: Array<{
+      path: string;
+      sha: string;
+      type: "blob";
+    }>,
+    private blobContents: Record<string, string> = {},
   ) {}
 
   request(request: HttpRequest): Promise<HttpResponse> {
@@ -106,7 +120,9 @@ class FakeGitHubHttpClient implements HttpClient {
     if (path.startsWith("/git/trees/")) {
       return Promise.resolve(
         response({
-          tree: [{ path: this.remotePath, sha: this.remoteSha, type: "blob" }],
+          tree: this.repositoryEntries ?? [
+            { path: this.remotePath, sha: this.remoteSha, type: "blob" },
+          ],
           truncated: false,
         }),
       );
@@ -140,6 +156,16 @@ class FakeGitHubHttpClient implements HttpClient {
     }
     if (path === "/git/blobs")
       return Promise.resolve(response({ sha: "blob-new" }, 201));
+    if (path.startsWith("/git/blobs/")) {
+      const sha = path.slice("/git/blobs/".length);
+      return Promise.resolve(
+        response({
+          sha,
+          content: encodeBase64(this.blobContents[sha] ?? this.remoteContent),
+          encoding: "base64",
+        }),
+      );
+    }
     if (path === "/git/trees")
       return Promise.resolve(response({ sha: "tree-new" }, 201));
     if (path === "/git/commits")
@@ -371,6 +397,60 @@ describe("GitHub sync integration", () => {
     });
     expect(await vault.read(local)).toBe("GitHub content");
     expect(settings.fileState["note.md"]?.sha).toBe("remote-blob-sha");
+  });
+
+  it("clones every repository blob, including .obsidian and binary files", async () => {
+    const vault = new MemoryVault();
+    const app = createApp(vault);
+    const settings = createSettings();
+    const http = new FakeGitHubHttpClient(
+      "unused",
+      "unused-sha",
+      "unused.md",
+      "commit-clone",
+      undefined,
+      [
+        { path: "note.md", sha: "note-sha", type: "blob" },
+        { path: "image.png", sha: "image-sha", type: "blob" },
+        { path: ".obsidian/app.json", sha: "config-sha", type: "blob" },
+        {
+          path: ".obsidian/plugins/git-pad/main.js",
+          sha: "plugin-sha",
+          type: "blob",
+        },
+      ],
+      {
+        "note-sha": "# Cloned note",
+        "image-sha": "binary image content",
+        "config-sha": '{"theme":"Minimal"}',
+        "plugin-sha": "plugin bundle",
+      },
+    );
+    const service = new SyncService(
+      app,
+      settings,
+      new GitHubApi(app, settings, http),
+    );
+
+    await expect(service.clone()).resolves.toMatchObject({
+      changed: 4,
+      conflicts: [],
+      headCommit: "commit-clone",
+      requiresReload: true,
+    });
+    expect(
+      await vault.read(vault.getAbstractFileByPath("note.md") as TFile),
+    ).toBe("# Cloned note");
+    expect(vault.getAbstractFileByPath("image.png")).toBeInstanceOf(TFile);
+    expect(
+      await vault.read(
+        vault.getAbstractFileByPath(".obsidian/app.json") as TFile,
+      ),
+    ).toBe('{"theme":"Minimal"}');
+    expect(
+      vault.getAbstractFileByPath(".obsidian/plugins/git-pad/main.js"),
+    ).toBeInstanceOf(TFile);
+    expect(settings.fileState["note.md"]?.sha).toBe("note-sha");
   });
 
   it("creates missing parent folders before pulling a nested note", async () => {

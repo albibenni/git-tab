@@ -42,6 +42,13 @@ export default class GitHubSyncMobilePlugin extends Plugin {
         void this.runSync("push");
       },
     });
+    this.addCommand({
+      id: "clone",
+      name: "Clone repository into this blank vault",
+      callback: () => {
+        void this.runSync("clone");
+      },
+    });
   }
   async loadSettings(): Promise<void> {
     const parsed = storedSettingsSchema.safeParse(await this.loadData());
@@ -62,7 +69,7 @@ export default class GitHubSyncMobilePlugin extends Plugin {
         this.app.secretStorage.getSecret(this.settings.tokenSecretName),
     );
   }
-  async runSync(direction: "pull" | "push"): Promise<void> {
+  async runSync(direction: "pull" | "push" | "clone"): Promise<void> {
     if (this.syncing) {
       new Notice("Git Pad: a sync is already in progress.");
       return;
@@ -94,8 +101,10 @@ export default class GitHubSyncMobilePlugin extends Plugin {
         `Completed: ${result.changed} file(s), ${result.conflicts.length} conflict(s).`,
       );
       new Notice(
-        `GitHub Sync: ${direction === "pull" ? "pulled" : "pushed"} ${result.changed} file(s); ${result.conflicts.length} conflict(s); ${result.requiresPull.length} file(s) need a pull.`,
+        `GitHub Sync: ${direction === "pull" ? "pulled" : direction === "push" ? "pushed" : "cloned"} ${result.changed} file(s); ${result.conflicts.length} conflict(s); ${result.requiresPull.length} file(s) need a pull.`,
       );
+      if (result.requiresReload)
+        new Notice("Git Pad: reload Obsidian to activate cloned plugin files.");
       console.info("Git Pad: sync completed", {
         direction,
         durationMs: Date.now() - startedAt,

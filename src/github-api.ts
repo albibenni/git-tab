@@ -4,6 +4,7 @@ import { type HttpClient, obsidianHttpClient } from "./http-client";
 import type { GitHubSyncSettings } from "./types";
 import {
   decodeBase64,
+  decodeBase64Bytes,
   encodeBase64,
   isSyncableVaultPath,
   remotePath,
@@ -91,6 +92,23 @@ export class GitHubApi {
     return entries;
   }
 
+  async listRepositoryFiles(ref: string): Promise<Map<string, RemoteEntry>> {
+    this.onProgress("Fetching repository tree…");
+    const tree = await this.request(
+      `/git/trees/${encodeURIComponent(ref)}?recursive=1`,
+      treeSchema,
+    );
+    if (tree.truncated)
+      throw new Error(
+        "Repository tree is too large for a safe clone. Clone a smaller repository instead.",
+      );
+    return new Map(
+      tree.tree
+        .filter((entry) => entry.type === "blob")
+        .map((entry) => [entry.path, entry]),
+    );
+  }
+
   async listChangedSyncFiles(
     base: string,
     head: string,
@@ -145,6 +163,14 @@ export class GitHubApi {
       sha: result.sha,
       content: decodeBase64(result.content.replace(/\n/g, "")),
     };
+  }
+
+  async getBlob(sha: string): Promise<ArrayBuffer> {
+    const blob = await this.request(
+      `/git/blobs/${encodeURIComponent(sha)}`,
+      fileSchema,
+    );
+    return decodeBase64Bytes(blob.content.replace(/\n/g, ""));
   }
 
   async getHead(): Promise<string> {

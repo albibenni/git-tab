@@ -108,6 +108,120 @@ export class SyncService {
     }
   }
 
+  async clone(): Promise<SyncResult> {
+    if (this.settings.vaultFolder)
+      throw new Error(
+        "Clear Remote folder before cloning an entire repository into this vault.",
+      );
+    const configDir = normalizePath(this.app.vault.configDir);
+    const existingFiles = this.app.vault
+      .getFiles()
+      .filter((file) => !file.path.startsWith(`${configDir}/`));
+    if (existingFiles.length)
+      throw new Error(
+        `Clone requires an empty vault. Found ${existingFiles.length} existing vault file(s).`,
+      );
+    const controller = new AbortController();
+    try {
+      this.onProgress("Fetching repository head for clone…");
+      const head = await withTimeout(
+        this.api.getHead(),
+        pullNoteTimeoutMs,
+        "Fetching repository head for clone",
+        () => controller.abort(),
+      );
+      const remote = await withTimeout(
+        this.api.listRepositoryFiles(head),
+        pullNoteTimeoutMs,
+        "Fetching repository tree for clone",
+        () => controller.abort(),
+      );
+      const result: SyncResult = {
+        changed: 0,
+        conflicts: [],
+        requiresPull: [],
+      };
+      let completed = 0;
+      await mapConcurrent(
+        [...remote.entries()],
+        this.settings.pullConcurrency,
+        async ([path, entry], index) => {
+          try {
+            this.onProgress(
+              `Clone: fetching ${index + 1}/${remote.size} — ${path}`,
+            );
+            await withTimeout(
+              this.cloneFile(path, entry, result, controller.signal),
+              pullNoteTimeoutMs,
+              `Cloning ${path}`,
+              () => controller.abort(),
+            );
+            throwIfAborted(controller.signal);
+            completed++;
+            this.onProgress(
+              `Clone: completed ${completed}/${remote.size} — ${path}`,
+            );
+          } catch (error) {
+            controller.abort();
+            throw error;
+          }
+        },
+        () => controller.signal.aborted,
+      );
+      result.headCommit = head;
+      result.requiresReload = [...remote.keys()].some((path) =>
+        path.startsWith(`${configDir}/plugins/git-pad/`),
+      );
+      return result;
+    } catch (error) {
+      controller.abort();
+      throw error;
+    }
+  }
+
+  private async cloneFile(
+    path: string,
+    entry: import("./github-api").RemoteEntry,
+    result: SyncResult,
+    signal: AbortSignal,
+  ): Promise<void> {
+    const normalizedPath = normalizePath(path);
+    if (
+      !normalizedPath ||
+      normalizedPath === ".." ||
+      normalizedPath.startsWith("../") ||
+      path.startsWith("/")
+    )
+      throw new Error(`Repository contains an unsafe path: ${path}`);
+    const content = await this.api.getBlob(entry.sha);
+    throwIfAborted(signal);
+    const configPath = normalizedPath.startsWith(
+      `${normalizePath(this.app.vault.configDir)}/`,
+    );
+    if (configPath) {
+      await this.ensureConfigParentFolders(normalizedPath, signal);
+      await this.app.vault.adapter.writeBinary(normalizedPath, content);
+    } else {
+      await this.ensureParentFolders(normalizedPath, signal);
+      await this.app.vault.createBinary(normalizedPath, content);
+    }
+    throwIfAborted(signal);
+    if (
+      isSyncableVaultPath(
+        normalizedPath,
+        this.app.vault.configDir,
+        this.settings.syncObsidianConfig,
+      )
+    ) {
+      const localContent = new TextDecoder().decode(content);
+      this.settings.fileState[normalizedPath] = {
+        sha: entry.sha,
+        contentHash: await contentHash(localContent),
+      };
+    }
+    result.changed++;
+  }
+
   private async pullNote(
     path: string,
     entry: import("./github-api").RemoteEntry,

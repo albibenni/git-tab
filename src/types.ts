@@ -50,6 +50,7 @@ export type SyncResult = {
   conflicts: string[];
   requiresPull: string[];
   headCommit?: string;
+  requiresReload?: boolean;
 };
 
 export type GitStatus = {

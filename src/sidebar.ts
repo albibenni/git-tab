@@ -35,6 +35,7 @@ export class GitPadSidebar extends ItemView {
     const actions = root.createDiv({ cls: "git-pad-actions" });
     for (const [label, action] of [
       ["Fetch", () => this.plugin.fetchStatus()],
+      ["Clone", () => this.plugin.runSync("clone")],
       ["Pull", () => this.plugin.runSync("pull")],
       ["Commit & Push", () => this.plugin.runSync("push")],
     ] as const) {
