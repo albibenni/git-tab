@@ -1,6 +1,6 @@
 {
   "name": "git-pad",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A mobile-first GitHub sync plugin for Obsidian.",
   "main": "main.js",
   "type": "module",
