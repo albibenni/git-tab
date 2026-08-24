@@ -1,3 +1,4 @@
+import { rateLimitRetryMessage } from "./github-api";
 import { storedSettingsSchema } from "./types";
 import {
   decodeBase64,
@@ -11,6 +12,13 @@ import {
 } from "./utils";
 
 describe("encoding helpers", () => {
+  it("turns GitHub rate-limit timestamps into a local retry window", () => {
+    const now = Date.UTC(2026, 7, 23, 12, 0, 0);
+    expect(
+      rateLimitRetryMessage(`${(now + 90 * 60_000) / 1_000}`, undefined, now),
+    ).toContain("in 1h 30m");
+  });
+
   it("round-trips Unicode Markdown", () => {
     const source = "# Notes ✨\nCaffè";
     expect(decodeBase64(encodeBase64(source))).toBe(source);

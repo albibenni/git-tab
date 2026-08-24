@@ -1,3 +1,4 @@
+import { strToU8, zipSync } from "fflate";
 import { App, TFile } from "obsidian";
 import { describe, expect, it } from "vitest";
 import { GitHubApi } from "./github-api";
@@ -108,14 +109,38 @@ class FakeGitHubHttpClient implements HttpClient {
       type: "blob";
     }>,
     private blobContents: Record<string, string> = {},
+    private archiveContents?: Record<string, string>,
   ) {}
 
   request(request: HttpRequest): Promise<HttpResponse> {
     const url = new URL(request.url);
     const path = url.pathname.replace("/repos/acme/notes", "");
     this.requests.push(`${request.method ?? "GET"} ${path}${url.search}`);
-    const response = (json: unknown, status = 200) =>
-      ({ status, json, text: JSON.stringify(json) }) as HttpResponse;
+    const response = (
+      json: unknown,
+      status = 200,
+      arrayBuffer = new ArrayBuffer(0),
+      headers: Record<string, string> = {},
+    ) =>
+      ({
+        status,
+        json,
+        text: JSON.stringify(json),
+        arrayBuffer,
+        headers,
+      }) as HttpResponse;
+
+    if (path === `/zipball/${this.head}`) {
+      const archive = zipSync(
+        Object.fromEntries(
+          Object.entries(this.archiveContents ?? {}).map(([name, content]) => [
+            `acme-notes-${this.head}/${name}`,
+            strToU8(content),
+          ]),
+        ),
+      );
+      return Promise.resolve(response({}, 200, archive.buffer as ArrayBuffer));
+    }
 
     if (path.startsWith("/git/trees/")) {
       return Promise.resolve(
@@ -399,7 +424,7 @@ describe("GitHub sync integration", () => {
     expect(settings.fileState["note.md"]?.sha).toBe("remote-blob-sha");
   });
 
-  it("clones every repository blob, including .obsidian and binary files", async () => {
+  it("clones every repository archive file, including .obsidian and binary files", async () => {
     const vault = new MemoryVault();
     const app = createApp(vault);
     const settings = createSettings();
@@ -409,21 +434,13 @@ describe("GitHub sync integration", () => {
       "unused.md",
       "commit-clone",
       undefined,
-      [
-        { path: "note.md", sha: "note-sha", type: "blob" },
-        { path: "image.png", sha: "image-sha", type: "blob" },
-        { path: ".obsidian/app.json", sha: "config-sha", type: "blob" },
-        {
-          path: ".obsidian/plugins/git-pad/main.js",
-          sha: "plugin-sha",
-          type: "blob",
-        },
-      ],
+      undefined,
+      {},
       {
-        "note-sha": "# Cloned note",
-        "image-sha": "binary image content",
-        "config-sha": '{"theme":"Minimal"}',
-        "plugin-sha": "plugin bundle",
+        "note.md": "# Cloned note",
+        "image.png": "binary image content",
+        ".obsidian/app.json": '{"theme":"Minimal"}',
+        ".obsidian/plugins/git-pad/main.js": "plugin bundle",
       },
     );
     const service = new SyncService(
@@ -450,7 +467,11 @@ describe("GitHub sync integration", () => {
     expect(
       vault.getAbstractFileByPath(".obsidian/plugins/git-pad/main.js"),
     ).toBeInstanceOf(TFile);
-    expect(settings.fileState["note.md"]?.sha).toBe("note-sha");
+    expect(settings.fileState["note.md"]?.sha).toBeDefined();
+    expect(http.requests).toContain("GET /zipball/commit-clone");
+    expect(
+      http.requests.some((request) => request.includes("/git/blobs/")),
+    ).toBe(false);
   });
 
   it("creates missing parent folders before pulling a nested note", async () => {

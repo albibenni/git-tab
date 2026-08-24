@@ -1,10 +1,13 @@
 import { App } from "obsidian";
 import { z } from "zod";
-import { type HttpClient, obsidianHttpClient } from "./http-client";
+import {
+  type HttpClient,
+  type HttpResponse,
+  obsidianHttpClient,
+} from "./http-client";
 import type { GitHubSyncSettings } from "./types";
 import {
   decodeBase64,
-  decodeBase64Bytes,
   encodeBase64,
   isSyncableVaultPath,
   remotePath,
@@ -52,6 +55,32 @@ const comparisonSchema = z.object({
 export type RemoteEntry = z.infer<typeof treeSchema>["tree"][number];
 const noProgress = (_message: string): void => undefined;
 const requestTimeoutMs = 60_000;
+const archiveRequestTimeoutMs = 300_000;
+
+export function rateLimitRetryMessage(
+  reset: string | undefined,
+  retryAfter: string | undefined,
+  now = Date.now(),
+): string {
+  const retryAfterSeconds = Number(retryAfter);
+  const resetSeconds = Number(reset);
+  const retryAt = Number.isFinite(retryAfterSeconds)
+    ? now + retryAfterSeconds * 1_000
+    : Number.isFinite(resetSeconds)
+      ? resetSeconds * 1_000
+      : undefined;
+  if (!retryAt) return "GitHub rate limit reached. Retry after the reset time.";
+  const remainingMinutes = Math.max(1, Math.ceil((retryAt - now) / 60_000));
+  const duration =
+    remainingMinutes >= 60
+      ? `${Math.floor(remainingMinutes / 60)}h ${remainingMinutes % 60}m`
+      : `${remainingMinutes}m`;
+  const localTime = new Date(retryAt).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  return `GitHub rate limit reached. Retry at ${localTime} (in ${duration}).`;
+}
 
 export class GitHubApi {
   constructor(
@@ -90,23 +119,6 @@ export class GitHubApi {
       entries.set(path, entry);
     }
     return entries;
-  }
-
-  async listRepositoryFiles(ref: string): Promise<Map<string, RemoteEntry>> {
-    this.onProgress("Fetching repository tree…");
-    const tree = await this.request(
-      `/git/trees/${encodeURIComponent(ref)}?recursive=1`,
-      treeSchema,
-    );
-    if (tree.truncated)
-      throw new Error(
-        "Repository tree is too large for a safe clone. Clone a smaller repository instead.",
-      );
-    return new Map(
-      tree.tree
-        .filter((entry) => entry.type === "blob")
-        .map((entry) => [entry.path, entry]),
-    );
   }
 
   async listChangedSyncFiles(
@@ -165,12 +177,47 @@ export class GitHubApi {
     };
   }
 
-  async getBlob(sha: string): Promise<ArrayBuffer> {
-    const blob = await this.request(
-      `/git/blobs/${encodeURIComponent(sha)}`,
-      fileSchema,
+  async downloadArchive(ref: string): Promise<ArrayBuffer> {
+    this.onProgress("Downloading repository archive…");
+    const token = this.app.secretStorage.getSecret(
+      this.settings.tokenSecretName,
     );
-    return decodeBase64Bytes(blob.content.replace(/\n/g, ""));
+    if (!token)
+      throw new Error("No GitHub credential is selected in settings.");
+    const apiUrl = `https://api.github.com/repos/${encodeURIComponent(this.settings.owner)}/${encodeURIComponent(this.settings.repo)}/zipball/${encodeURIComponent(ref)}`;
+    const archiveHeaders = {
+      Accept: "application/vnd.github+json",
+      Authorization: `Bearer ${token}`,
+      "X-GitHub-Api-Version": "2022-11-28",
+    };
+    let response = await withTimeout(
+      this.http.request({
+        url: apiUrl,
+        headers: archiveHeaders,
+        throw: false,
+      }),
+      archiveRequestTimeoutMs,
+      "Downloading repository archive",
+    );
+    if (response.status >= 300 && response.status < 400) {
+      const location = response.headers.location;
+      if (!location)
+        throw new Error("GitHub did not provide a repository archive URL.");
+      const redirect = new URL(location, apiUrl);
+      if (
+        redirect.protocol !== "https:" ||
+        (redirect.hostname !== "github.com" &&
+          !redirect.hostname.endsWith(".github.com"))
+      )
+        throw new Error("GitHub returned an unsafe repository archive URL.");
+      response = await withTimeout(
+        this.http.request({ url: redirect.toString(), throw: false }),
+        archiveRequestTimeoutMs,
+        "Downloading repository archive",
+      );
+    }
+    if (response.status >= 300) this.throwResponseError(response);
+    return response.arrayBuffer;
   }
 
   async getHead(): Promise<string> {
@@ -289,33 +336,39 @@ export class GitHubApi {
       description,
       () => console.warn("Git Pad: GitHub request timed out", { method, path }),
     );
-    if (response.status >= 300) {
-      const detail =
-        (response.json as { message?: string } | undefined)?.message ??
-        response.text;
-      if (
-        response.status === 403 &&
-        response.headers["x-ratelimit-remaining"] === "0"
-      )
-        throw new Error(
-          `GitHub rate limit reached. Retry after ${response.headers["x-ratelimit-reset"] ?? "the reset time"}.`,
-        );
-      if (response.status === 401)
-        throw new Error(
-          "GitHub authentication failed. Replace the selected token.",
-        );
-      if (response.status === 404)
-        throw new Error(
-          "GitHub repository, branch, or token permission was not found.",
-        );
-      throw new GitHubResponseError(response.status, detail);
-    }
+    if (response.status >= 300) this.throwResponseError(response);
     const parsed = schema.safeParse(response.json);
     if (!parsed.success)
       throw new Error(
         `GitHub returned an invalid response: ${parsed.error.issues[0]?.message ?? "schema error"}`,
       );
     return parsed.data;
+  }
+
+  private throwResponseError(response: HttpResponse): never {
+    const detail =
+      (response.json as { message?: string } | undefined)?.message ??
+      response.text;
+    if (
+      response.status === 403 &&
+      (response.headers["x-ratelimit-remaining"] === "0" ||
+        /rate limit/i.test(detail))
+    )
+      throw new Error(
+        rateLimitRetryMessage(
+          response.headers["x-ratelimit-reset"],
+          response.headers["retry-after"],
+        ),
+      );
+    if (response.status === 401)
+      throw new Error(
+        "GitHub authentication failed. Replace the selected token.",
+      );
+    if (response.status === 404)
+      throw new Error(
+        "GitHub repository, branch, or token permission was not found.",
+      );
+    throw new GitHubResponseError(response.status, detail);
   }
 }
 

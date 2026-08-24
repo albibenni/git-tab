@@ -73,7 +73,7 @@ It does **not** delete local-only files. Disable the setting after recovery if y
 
 ## Clone a repository into a blank vault
 
-Use **Clone repository into this blank vault** when creating a new vault from GitHub. It uses the configured owner, repository, and branch, then copies every tracked blob at one pinned commit:
+Use **Clone repository into this blank vault** when creating a new vault from GitHub. It uses the configured owner, repository, and branch, then downloads one ZIP archive at a pinned commit and copies every tracked file locally. This avoids one GitHub API request per file, so large repositories can clone without exhausting the API request limit:
 
 - Markdown, attachments, and other binary files are copied.
 - `.obsidian` is copied, including themes, snippets, and plugin folders such as BRAT and Git Pad.

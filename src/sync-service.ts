@@ -1,3 +1,4 @@
+import { unzipSync } from "fflate";
 import { App, normalizePath, TFile } from "obsidian";
 import { GitHubApi } from "./github-api";
 import type { GitHubSyncSettings, SyncResult } from "./types";
@@ -11,10 +12,17 @@ import {
 
 const noProgress = (_message: string): void => undefined;
 const pullNoteTimeoutMs = 60_000;
+const cloneArchiveTimeoutMs = 300_000;
 
 function throwIfAborted(signal: AbortSignal): void {
   if (signal.aborted)
     throw new Error("Pull cancelled after an earlier operation failed.");
+}
+
+function arrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  const buffer = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(buffer).set(bytes);
+  return buffer;
 }
 
 export class SyncService {
@@ -130,12 +138,15 @@ export class SyncService {
         "Fetching repository head for clone",
         () => controller.abort(),
       );
-      const remote = await withTimeout(
-        this.api.listRepositoryFiles(head),
-        pullNoteTimeoutMs,
-        "Fetching repository tree for clone",
+      const archive = await withTimeout(
+        this.api.downloadArchive(head),
+        cloneArchiveTimeoutMs,
+        "Downloading repository archive",
         () => controller.abort(),
       );
+      throwIfAborted(controller.signal);
+      this.onProgress("Unpacking repository archive…");
+      const files = this.archiveFiles(archive);
       const result: SyncResult = {
         changed: 0,
         conflicts: [],
@@ -143,15 +154,15 @@ export class SyncService {
       };
       let completed = 0;
       await mapConcurrent(
-        [...remote.entries()],
+        files,
         this.settings.pullConcurrency,
-        async ([path, entry], index) => {
+        async ([path, content], index) => {
           try {
             this.onProgress(
-              `Clone: fetching ${index + 1}/${remote.size} — ${path}`,
+              `Clone: writing ${index + 1}/${files.length} — ${path}`,
             );
             await withTimeout(
-              this.cloneFile(path, entry, result, controller.signal),
+              this.cloneFile(path, content, result, controller.signal),
               pullNoteTimeoutMs,
               `Cloning ${path}`,
               () => controller.abort(),
@@ -159,7 +170,7 @@ export class SyncService {
             throwIfAborted(controller.signal);
             completed++;
             this.onProgress(
-              `Clone: completed ${completed}/${remote.size} — ${path}`,
+              `Clone: completed ${completed}/${files.length} — ${path}`,
             );
           } catch (error) {
             controller.abort();
@@ -169,7 +180,7 @@ export class SyncService {
         () => controller.signal.aborted,
       );
       result.headCommit = head;
-      result.requiresReload = [...remote.keys()].some((path) =>
+      result.requiresReload = files.some(([path]) =>
         path.startsWith(`${configDir}/plugins/git-pad/`),
       );
       return result;
@@ -181,7 +192,7 @@ export class SyncService {
 
   private async cloneFile(
     path: string,
-    entry: import("./github-api").RemoteEntry,
+    content: Uint8Array,
     result: SyncResult,
     signal: AbortSignal,
   ): Promise<void> {
@@ -193,17 +204,19 @@ export class SyncService {
       path.startsWith("/")
     )
       throw new Error(`Repository contains an unsafe path: ${path}`);
-    const content = await this.api.getBlob(entry.sha);
     throwIfAborted(signal);
     const configPath = normalizedPath.startsWith(
       `${normalizePath(this.app.vault.configDir)}/`,
     );
     if (configPath) {
       await this.ensureConfigParentFolders(normalizedPath, signal);
-      await this.app.vault.adapter.writeBinary(normalizedPath, content);
+      await this.app.vault.adapter.writeBinary(
+        normalizedPath,
+        arrayBuffer(content),
+      );
     } else {
       await this.ensureParentFolders(normalizedPath, signal);
-      await this.app.vault.createBinary(normalizedPath, content);
+      await this.app.vault.createBinary(normalizedPath, arrayBuffer(content));
     }
     throwIfAborted(signal);
     if (
@@ -215,11 +228,36 @@ export class SyncService {
     ) {
       const localContent = new TextDecoder().decode(content);
       this.settings.fileState[normalizedPath] = {
-        sha: entry.sha,
+        sha: await gitBlobSha(localContent),
         contentHash: await contentHash(localContent),
       };
     }
     result.changed++;
+  }
+
+  private archiveFiles(archive: ArrayBuffer): Array<[string, Uint8Array]> {
+    let extracted: Record<string, Uint8Array>;
+    try {
+      extracted = unzipSync(new Uint8Array(archive));
+    } catch (error) {
+      throw new Error(
+        `Unable to unpack GitHub's repository archive: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    const entries = Object.entries(extracted).filter(
+      ([path]) => !path.endsWith("/"),
+    );
+    const root = entries[0]?.[0].split("/")[0];
+    if (!root || entries.length === 0)
+      throw new Error("GitHub returned an empty repository archive.");
+    return entries.map(([path, content]) => {
+      const prefix = `${root}/`;
+      if (!path.startsWith(prefix))
+        throw new Error(
+          "GitHub returned an archive with an unsafe file layout.",
+        );
+      return [path.slice(prefix.length), content];
+    });
   }
 
   private async pullNote(
